@@ -311,15 +311,66 @@ Only use results for this exact address. Return valid JSON only.`;
 
     const fullText = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
 
+    // Strategy 1: direct JSON extraction
     let parsed = null;
     const m1 = fullText.match(/\{[\s\S]*\}/);
     if (m1) { try { parsed = JSON.parse(m1[0]); } catch {} }
+
+    // Strategy 2: strip markdown fences
     if (!parsed) {
       const stripped = fullText.replace(/```json|```/g, "").trim();
       const m2 = stripped.match(/\{[\s\S]*\}/);
       if (m2) { try { parsed = JSON.parse(m2[0]); } catch {} }
     }
-    if (!parsed) return NextResponse.json({ error: "Could not parse quote. Try again.", raw: fullText }, { status: 500 });
+
+    // Strategy 3: ask Claude to reformat as clean JSON (auto-retry)
+    if (!parsed) {
+      const fixRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 3000,
+          messages: [{
+            role: "user",
+            content: `Convert this window cleaning quote data into a single valid JSON object. Return ONLY the JSON, no markdown, no explanation, no backticks:\n\n${fullText}`
+          }]
+        })
+      });
+      const fixData = await fixRes.json();
+      const fixText = (fixData.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+      const m3 = fixText.replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
+      if (m3) { try { parsed = JSON.parse(m3[0]); } catch {} }
+    }
+
+    // Strategy 4: retry the entire quote from scratch once
+    if (!parsed) {
+      const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 3000,
+          system: systemPrompt + "\n\nCRITICAL: Your response must be a single valid JSON object only. No text before or after it. No markdown. No explanation. Just the raw JSON.",
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: userMessage + "\n\nIMPORTANT: Return ONLY a valid JSON object. Nothing else." }],
+        })
+      });
+      const retryData = await retryRes.json();
+      const retryText = (retryData.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+      const m4 = retryText.replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
+      if (m4) { try { parsed = JSON.parse(m4[0]); } catch {} }
+    }
+
+    if (!parsed) return NextResponse.json({ error: "Quote failed after multiple attempts. Please try again in a moment." }, { status: 500 });
 
     // Hard floor enforcement
     const FLOOR = 220;
