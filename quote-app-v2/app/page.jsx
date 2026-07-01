@@ -124,7 +124,7 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "0.5px solid var(--border)" }}>
               {[
                 { label: "Distance", value: quote.distance_km && quote.drive_time ? `${quote.distance_km} · ${quote.drive_time}` : "—", warn: quote.distance_flag === "long" || quote.distance_flag === "very long" },
-                { label: "Roof size", value: quote.roof_size || quote.size_assessment || "—" },
+                { label: "Roof size", value: quote.roof_description || (quote.roof_m2 ? `~${quote.roof_m2}m²` : "~160m² (avg estimate)") },
                 { label: "Colonial", value: quote.colonial_panes || "—" },
               ].map(s => (
                 <div key={s.label} style={{ minWidth: 80 }}>
