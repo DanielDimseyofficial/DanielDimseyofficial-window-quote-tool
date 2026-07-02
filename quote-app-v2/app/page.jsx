@@ -93,6 +93,29 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
           </div>
         </div>
         <div>
+          <label style={labelStyle}>Window type</label>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            {[
+              ["standard", "Standard"],
+              ["half_colonial", "Half colonial"],
+              ["front_colonial", "Front colonial only"],
+              ["colonial_6", "Colonial 6-pane"],
+              ["colonial_8", "Colonial 8-pane"],
+              ["colonial_10", "Colonial 10-pane"],
+              ["colonial_10plus", "Colonial 10+ pane"],
+            ].map(([val, lbl]) => (
+              <button key={val} onClick={() => setWindowType(val)} style={{
+                padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer",
+                background: windowType === val ? "var(--text-primary)" : "var(--surface-1)",
+                color: windowType === val ? "var(--bg)" : "var(--text-secondary)",
+                border: `0.5px solid ${windowType === val ? "var(--text-primary)" : "var(--border)"}`,
+                fontWeight: windowType === val ? 500 : 400,
+              }}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label style={labelStyle}>Customer notes <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
           <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Pool, colonial windows, narrow gate, lots of trees..." rows={2} style={{ marginTop: 6, resize: "vertical" }} />
         </div>
@@ -134,8 +157,8 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "0.5px solid var(--border)" }}>
               {[
                 { label: "Distance", value: quote.distance_km && quote.drive_time ? `${quote.distance_km} · ${quote.drive_time}` : "—", warn: quote.distance_flag === "long" || quote.distance_flag === "very long" },
-                { label: "Roof size", value: quote.roof_m2 ? `~${quote.roof_m2}m² (${quote.roof_confidence || "estimated"})` : "estimating...", warn: quote.roof_confidence === "low" },
-                { label: "Colonial", value: quote.colonial_panes || "—" },
+                { label: "Roof size", value: quote.roof_m2 ? `${quote.roof_m2}m²` : "not measured" },
+                { label: "Window type", value: quote.window_type_label || "Standard" },
               ].map(s => (
                 <div key={s.label} style={{ minWidth: 80 }}>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 2px" }}>{s.label}</p>
@@ -172,18 +195,21 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
 
           {activeTab === "windows" && quote.windows && (
             <>
-              <PriceBlock label="Standard windows" opening={quote.windows.standard?.opening} fallback={quote.windows.standard?.fallback} floor={quote.windows.standard?.floor} openingMargin={quote.windows.standard?.opening_margin} fallbackMargin={quote.windows.standard?.fallback_margin} floorMargin={quote.windows.standard?.floor_margin} cost={quote.windows.standard?.cost} time={quote.windows.standard?.time} includes={quote.windows.standard?.includes} highlight={false} />
-              <PriceBlock label={quote.colonial === "none" ? "Colonial (reference only)" : quote.colonial === "uncertain" ? "If colonial — verify by phone" : "Colonial windows"} opening={quote.windows.colonial?.opening} fallback={quote.windows.colonial?.fallback} floor={quote.windows.colonial?.floor} openingMargin={quote.windows.colonial?.opening_margin} fallbackMargin={quote.windows.colonial?.fallback_margin} floorMargin={quote.windows.colonial?.floor_margin} cost={quote.windows.colonial?.cost} time={quote.windows.colonial?.time} includes={quote.windows.colonial?.includes} highlight={quote.colonial !== "none"} />
+              {quote.learned_time && (
+                <div style={{ padding: "10px 14px", background: "var(--bg-warning)", border: "0.5px solid var(--border-warning)", borderRadius: "var(--radius)", marginBottom: 10 }}>
+                  <p style={{ fontSize: 13, color: "var(--text-warning)", margin: 0, fontWeight: 500 }}>
+                    📊 {quote.learned_time.note} — time adjusted to {quote.learned_time.hours} hrs
+                  </p>
+                </div>
+              )}
+              <PriceBlock label={quote.window_type_label || "Windows"} opening={quote.windows.opening} fallback={quote.windows.fallback} floor={quote.windows.floor} openingMargin={quote.windows.opening_margin} fallbackMargin={quote.windows.fallback_margin} floorMargin={quote.windows.floor_margin} cost={quote.windows.cost} time={quote.windows.time} includes={quote.windows.includes} highlight={quote.window_type !== "standard"} />
             </>
           )}
           {activeTab === "gutters" && quote.gutters && (
             <PriceBlock label="Gutter cleaning" opening={quote.gutters.opening} fallback={quote.gutters.fallback} floor={quote.gutters.floor} openingMargin={quote.gutters.opening_margin} fallbackMargin={quote.gutters.fallback_margin} floorMargin={quote.gutters.floor_margin} cost={quote.gutters.cost} time={quote.gutters.time} includes={quote.gutters.includes} highlight={false} />
           )}
           {activeTab === "combo" && quote.combo && (
-            <>
-              <PriceBlock label="Windows + gutters (standard)" opening={quote.combo.standard_opening} fallback={quote.combo.standard_fallback} floor={quote.combo.standard_floor} openingMargin={quote.combo.standard_opening_margin} fallbackMargin={quote.combo.standard_fallback_margin} floorMargin={quote.combo.standard_floor_margin} cost={quote.combo.cost} time="combined" includes={`10% discount — saves customer $${quote.combo.saving_standard}`} highlight={false} />
-              <PriceBlock label="Windows + gutters (colonial)" opening={quote.combo.colonial_opening} fallback={quote.combo.colonial_fallback} floor={quote.combo.colonial_floor} openingMargin={quote.combo.colonial_opening_margin} fallbackMargin={quote.combo.colonial_fallback_margin} floorMargin={quote.combo.colonial_floor_margin} cost={quote.combo.cost} time="combined" includes={`10% discount — saves customer $${quote.combo.saving_colonial}`} highlight={quote.colonial !== "none"} />
-            </>
+            <PriceBlock label="Windows + gutters — 10% off" opening={quote.combo.standard_opening} fallback={quote.combo.standard_fallback} floor={quote.combo.standard_floor} openingMargin={quote.combo.standard_opening_margin} fallbackMargin={quote.combo.standard_fallback_margin} floorMargin={quote.combo.standard_floor_margin} cost={quote.combo.cost} time="combined booking" includes={`10% combo discount — saves customer $${quote.combo.saving}`} highlight={false} />
           )}
 
           {(quote.observations?.length > 0 || quote.verify?.length > 0) && (
@@ -233,6 +259,8 @@ function HistoryScreen({ jobs, openUpdate, deleteJob }) {
               <p style={{ fontSize: 15, fontWeight: 500, margin: "0 0 4px", color: "var(--text-primary)" }}>{job.address}</p>
               <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
                 {job.bedrooms}BR {job.storeys?.toLowerCase()} {job.propType?.toLowerCase()}
+                {job.quote?.roof_m2 ? ` · ${job.quote.roof_m2}m²` : ""}
+                {job.windowType && job.windowType !== "standard" ? ` · ${job.quote?.window_type_label || job.windowType}` : ""}
                 {job.quotedPrice ? ` · quoted $${job.quotedPrice}` : ""}
                 {job.finalPrice ? ` · charged $${job.finalPrice}` : ""}
                 {job.actualHours ? ` · ${job.actualHours}hrs actual` : ""}
@@ -337,6 +365,7 @@ export default function App() {
   const [propType, setPropType] = useState("House");
   const [extraNotes, setExtraNotes] = useState("");
   const [roofM2, setRoofM2] = useState("");
+  const [windowType, setWindowType] = useState("standard");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [error, setError] = useState(null);
@@ -362,7 +391,7 @@ export default function App() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, roofM2: roofM2 ? parseInt(roofM2) : null }),
+        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -381,7 +410,7 @@ export default function App() {
     const job = {
       id: Date.now().toString(),
       status: "quoted",
-      address, bedrooms, storeys, propType, extraNotes, quote,
+      address, bedrooms, storeys, propType, extraNotes, windowType, quote,
       quotedPrice: quote.windows?.standard?.opening,
       estimatedHours: quote.windows?.standard?.time,
       suburb: address.split(",").slice(-2, -1)[0]?.trim() || "",
