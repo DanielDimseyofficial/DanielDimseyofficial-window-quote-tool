@@ -4,7 +4,8 @@ import { getJobs } from "@/lib/jobs";
 // ─── DETERMINISTIC PRICING TABLES ───────────────────────────────────────────
 // Bedrooms + storeys = price. Same inputs = same price every time.
 
-const WINDOW_PRICING = {
+// Base prices by bedrooms (starting point before roof size adjustment)
+const WINDOW_BASE = {
   single: {
     "1": { base: 320, time: "2.5–3 hrs" },
     "2": { base: 320, time: "2.5–3 hrs" },
@@ -25,6 +26,22 @@ const WINDOW_PRICING = {
     "townhouse": { base: 470, time: "2–2.5 hrs" },
   }
 };
+
+// Roof size multiplier — adjusts base price up or down based on actual roof size
+// Single storey average = 160m², double storey average = 220m²
+function getRoofAdjustment(roofM2, storeys, confidence) {
+  if (confidence === "low") return 0; // don't adjust if we're not confident
+  const avg = storeys === "Double storey" ? 220 : 160;
+  const diff = roofM2 - avg;
+  if (diff < -60) return -35;      // much smaller than average
+  if (diff < -30) return -20;      // smaller than average
+  if (diff < 20)  return 0;        // average — no adjustment
+  if (diff < 60)  return 20;       // bigger than average
+  if (diff < 100) return 40;       // much bigger
+  return 60;                        // very large
+}
+
+const WINDOW_PRICING = WINDOW_BASE;
 
 const GUTTER_PRICING = {
   single: {
@@ -100,7 +117,7 @@ function calcPrices(basePrice, timeStr, colonialSurcharge = 0) {
   };
 }
 
-function buildQuote(facts, bedrooms, storeys, propType) {
+function buildQuote(facts, bedrooms, storeys, propType, roofData) {
   const isDouble = storeys === "Double storey";
   const isUnit = propType === "Unit / apartment";
   const isTownhouse = propType === "Townhouse";
@@ -117,10 +134,13 @@ function buildQuote(facts, bedrooms, storeys, propType) {
   const glassExtra = facts.extra_glass ? 40 : 0;
   const accessExtra = facts.difficult_access ? 30 : 0;
   const poolExtra = facts.pool_fencing ? 30 : 0;
-  const surchargeTotal = glassExtra + accessExtra + poolExtra;
+
+  // Roof size adjustment — adds or subtracts from base price based on actual roof size
+  const roofAdj = roofData ? getRoofAdjustment(roofData.roof_m2, storeys, roofData.confidence) : 0;
+  const surchargeTotal = glassExtra + accessExtra + poolExtra + roofAdj;
 
   const winBase = winTier.base + surchargeTotal;
-  const gutBase = gutTier.base;
+  const gutBase = gutTier.base + Math.round(roofAdj * 0.6); // gutters also adjust but less
 
   const winPrices = calcPrices(winBase, winTier.time, colonialSurcharge);
   const gutPrices = calcPrices(gutBase, gutTier.time, 0);
@@ -138,7 +158,10 @@ function buildQuote(facts, bedrooms, storeys, propType) {
 
   const m = (price, cost) => Math.round(((price - cost) / price) * 100);
 
-  const label = `${bedrooms}BR ${storeys.toLowerCase()}${surchargeTotal ? ` · +$${surchargeTotal} surcharges` : ""}`;
+  const roofLabel = roofData && roofData.confidence !== "low" 
+    ? ` · roof ~${roofData.roof_m2}m² (${roofData.confidence} confidence)` 
+    : " · roof size estimated";
+  const label = `${bedrooms}BR ${storeys.toLowerCase()}${roofLabel}${(glassExtra + accessExtra + poolExtra) ? ` · +$${glassExtra + accessExtra + poolExtra} surcharges` : ""}${roofAdj !== 0 ? ` · roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : ""}`;
 
   return {
     windows: {
@@ -224,7 +247,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured." }, { status: 500 });
     }
 
-    const jobs = await getJobs();
+    // Step 1: Get roof size from satellite image (parallel with jobs load)
+    const [jobs, roofData] = await Promise.all([
+      getJobs(),
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/roof`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      }).then(r => r.json()).catch(() => ({ roof_m2: 160, roof_description: "160m² default", confidence: "low" }))
+    ]);
     const completed = jobs.filter(j => j.actualHours && j.finalPrice).slice(-10);
     let historyNote = "";
     if (completed.length > 0) {
@@ -283,9 +314,16 @@ Search all 4 sources. Return only the JSON.`;
       };
     }
 
-    const pricing = buildQuote(facts, bedrooms, storeys, propType);
+    const pricing = buildQuote(facts, bedrooms, storeys, propType, roofData);
 
-    return NextResponse.json({ ...facts, ...pricing });
+    return NextResponse.json({ 
+      ...facts, 
+      ...pricing,
+      roof_m2: roofData?.roof_m2,
+      roof_description: roofData?.roof_description,
+      roof_confidence: roofData?.confidence,
+      roof_complexity: roofData?.roof_complexity,
+    });
 
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
