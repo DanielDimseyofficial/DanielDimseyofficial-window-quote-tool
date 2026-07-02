@@ -55,7 +55,7 @@ function colonialCfg(s) {
 
 // ── Screens as proper top-level components ──
 
-function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
+function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
   return (
     <div style={{ padding: "0 0 80px" }}>
       <div style={{ marginBottom: 20 }}>
@@ -455,6 +455,8 @@ export default function App() {
           storeys={storeys} setStoreys={setStoreys}
           propType={propType} setPropType={setPropType}
           extraNotes={extraNotes} setExtraNotes={setExtraNotes}
+          windowType={windowType} setWindowType={setWindowType}
+          roofM2={roofM2} setRoofM2={setRoofM2}
           loading={loading} generateQuote={generateQuote}
           saveQuoteAsJob={saveQuoteAsJob} saveMsg={saveMsg}
           quote={quote} activeTab={activeTab} setActiveTab={setActiveTab}
