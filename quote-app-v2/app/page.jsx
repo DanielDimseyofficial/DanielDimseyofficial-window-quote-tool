@@ -96,6 +96,16 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
           <label style={labelStyle}>Customer notes <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
           <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Pool, colonial windows, narrow gate, lots of trees..." rows={2} style={{ marginTop: 6, resize: "vertical" }} />
         </div>
+        <div>
+          <label style={labelStyle}>Roof size (m²) <span style={{ fontWeight: 400, textTransform: "none" }}>— measure on Google Earth for exact pricing</span></label>
+          <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
+            <input type="number" value={roofM2} onChange={e => setRoofM2(e.target.value)} placeholder="e.g. 165 — leave blank to auto-estimate" style={{ flex: 1 }} />
+            <button onClick={() => window.open(`https://earth.google.com/web/search/${encodeURIComponent(address)}`, "_blank")} title="Open in Google Earth" style={{ padding: "0 14px", background: "var(--surface-1)", color: "var(--text-primary)", border: "0.5px solid var(--border)", flexShrink: 0, width: 44, height: 42 }}>
+              🌍
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0" }}>In Google Earth: click the polygon tool → trace the roof → read the m² → type it here</p>
+        </div>
         <button onClick={generateQuote} disabled={!address.trim() || loading} style={{ width: "100%", padding: "11px 0", fontSize: 14, fontWeight: 500, opacity: address.trim() && !loading ? 1 : 0.5, cursor: address.trim() && !loading ? "pointer" : "not-allowed", background: "var(--text-primary)", color: "var(--bg)", border: "none" }}>
           {loading
             ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><i className="ti ti-loader-2" style={{ fontSize: 16, animation: "spin 1s linear infinite" }} />Researching property...</span>
@@ -326,6 +336,7 @@ export default function App() {
   const [storeys, setStoreys] = useState("Single storey");
   const [propType, setPropType] = useState("House");
   const [extraNotes, setExtraNotes] = useState("");
+  const [roofM2, setRoofM2] = useState("");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [error, setError] = useState(null);
@@ -351,7 +362,7 @@ export default function App() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes }),
+        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, roofM2: roofM2 ? parseInt(roofM2) : null }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
