@@ -1,32 +1,37 @@
 import { NextResponse } from "next/server";
 
-const VISION_PROMPT = `You are analyzing a satellite image of a property in Melbourne, Australia to estimate the roof size for window and gutter cleaning quotes.
+const VISION_PROMPT = `You are analyzing a high-resolution satellite image of a Melbourne property to estimate roof size for window and gutter cleaning quotes.
 
-Look at the satellite image carefully and:
-1. Identify the main house/building roof (not the garage, shed, or neighbouring properties)
-2. Estimate the roof dimensions in metres (width x depth)
-3. Calculate the approximate roof footprint in m²
-4. Note if the roof is simple (rectangle) or complex (multiple angles, extensions, L-shape etc)
+There is a RED PIN/MARKER on the image showing the exact property to measure. Focus ONLY on the roof of that specific property.
 
-A standard Melbourne brick veneer house is typically 10-15m wide and 12-18m deep.
-Compare the roof to the surrounding features — driveways, pools, gardens — to calibrate your estimate.
+Steps:
+1. Find the red pin — that marks the exact house to measure
+2. Look at the main roof of that house (ignore garage, shed, carport, neighbouring houses)
+3. Use surrounding features to calibrate scale — a standard car is ~4.5m long, a standard driveway is ~3m wide, a standard suburban block is ~15-20m wide
+4. Estimate width and depth of the main roof footprint in metres
+5. Calculate m² = width x depth
+
+Typical Melbourne single storey house: 10-15m wide, 12-18m deep = 120-270m²
+Typical Melbourne double storey house: 8-13m wide, 10-15m deep = 80-195m²
 
 Return ONLY this JSON:
 {
   "roof_m2": 165,
   "roof_width_m": 13,
   "roof_depth_m": 13,
-  "roof_description": "Estimated 13m x 13m single-storey roof — average size for the street",
+  "roof_description": "Estimated 13m x 13m — average size, hip roof, clear image",
   "roof_complexity": "simple|moderate|complex",
   "confidence": "high|medium|low",
-  "confidence_reason": "Clear satellite image, rectangular roof easily measured against driveway"
+  "confidence_reason": "Red pin clearly visible, roof outline distinct, calibrated against driveway width"
 }
 
 Rules:
-- roof_m2: integer, your best estimate of the house footprint only (not land size)
-- roof_complexity: simple = rectangle, moderate = L-shape or small extension, complex = many angles/large extensions
-- confidence: high if image is clear and roof is visible, medium if partially obscured, low if image quality is poor
-- Return ONLY the JSON, no markdown, no explanation`;
+- roof_m2: integer estimate of main house footprint only — NOT land size, NOT including garage
+- confidence high: red pin visible, roof outline clear, can calibrate against driveway/cars
+- confidence medium: roof visible but partially obscured by trees or shadows
+- confidence low: image unclear, heavy tree cover, or cannot identify the pinned property
+- roof_complexity: simple = rectangle/square, moderate = L-shape or one extension, complex = many angles
+- Return ONLY the JSON. No markdown. No explanation.`;
 
 export async function POST(request) {
   try {
@@ -52,8 +57,11 @@ export async function POST(request) {
 
     const { lat, lng } = geocodeData.results[0].geometry.location;
 
-    // Step 2: Get satellite image — zoom 19 gives ~0.3m per pixel, clear enough to see roof
-    const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=19&size=640x640&maptype=satellite&key=${googleKey}`;
+    // Step 2: Get satellite image
+    // zoom=20 is the closest zoom available — gives ~0.15m per pixel, enough to clearly see roof
+    // Adding a marker so Claude knows exactly which property to measure
+    // scale=2 doubles the resolution (1280x1280 effective) for much clearer imagery
+    const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=20&size=640x640&scale=2&maptype=satellite&markers=color:red%7C${lat},${lng}&key=${googleKey}`;
     const imageRes = await fetch(mapUrl);
 
     if (!imageRes.ok) {
