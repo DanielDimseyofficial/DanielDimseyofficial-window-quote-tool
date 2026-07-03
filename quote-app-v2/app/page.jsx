@@ -69,8 +69,10 @@ function PriceBlock({ label, opening, fallback, floor, openingMargin, fallbackMa
               <p style={{ margin: "0 0 3px" }}>Labour: ${costBreakdown.labour} ({costBreakdown.labour / 35}hrs × $35)</p>
               <p style={{ margin: "0 0 3px" }}>Drive time: ${costBreakdown.drive_time} (1hr × $35)</p>
               <p style={{ margin: "0 0 3px" }}>CAC: ${costBreakdown.cac}</p>
-              <p style={{ margin: "0 0 3px" }}>Fuel: ${costBreakdown.fuel}</p>
+              {costBreakdown.travel_total > 0 && <p style={{ margin: "0 0 3px" }}>Travel: ${costBreakdown.travel_total.toFixed(0)} (${costBreakdown.travel_km_charge}/km + ${costBreakdown.travel_time_fee} time fee)</p>}
               {costBreakdown.danger_premium > 0 && <p style={{ margin: "0 0 3px" }}>Double storey premium: ${costBreakdown.danger_premium}</p>}
+              {costBreakdown.pitch_surcharge > 0 && <p style={{ margin: "0 0 3px" }}>Pitch surcharge: ${costBreakdown.pitch_surcharge}</p>}
+              {costBreakdown.metal_extra_time && <p style={{ margin: "0 0 3px" }}>Metal roof: +{costBreakdown.metal_extra_time}</p>}
               <p style={{ margin: "6px 0 0", fontWeight: 500, color: "var(--text-primary)", borderTop: "0.5px solid var(--border)", paddingTop: 6 }}>Total cost: ${costBreakdown.total_cost}</p>
             </div>
           )}
@@ -88,7 +90,7 @@ function colonialCfg(s) {
   }[s] || { bg: "var(--surface-1)", color: "var(--text-muted)", label: "—" });
 }
 
-function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, features, setFeatures, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
+function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, features, setFeatures, roofType, setRoofType, pitch, setPitch, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
   return (
     <div style={{ padding: "0 0 80px" }}>
       <div style={{ marginBottom: 20 }}>
@@ -135,6 +137,26 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
               <button key={val} onClick={() => setWindowType(val)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: windowType === val ? "var(--text-primary)" : "var(--surface-1)", color: windowType === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${windowType === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: windowType === val ? 500 : 400 }}>{lbl}</button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label style={ls}>Roof type</label>
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            {[["tile","🔴 Tile"],["metal","⬛ Metal"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setRoofType(val)} style={{ padding: "6px 18px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: roofType === val ? "var(--text-primary)" : "var(--surface-1)", color: roofType === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${roofType === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: roofType === val ? 500 : 400 }}>{lbl}</button>
+            ))}
+            {roofType === "metal" && <span style={{ fontSize: 12, color: "var(--text-warning)", alignSelf: "center" }}>+45 min added</span>}
+          </div>
+        </div>
+
+        <div>
+          <label style={ls}>Roof pitch</label>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            {[["flat","Flat/low"],["standard","Standard"],["steep","Steep +$65"],["very_steep","Very steep +$100"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setPitch(val)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: pitch === val ? "var(--text-primary)" : "var(--surface-1)", color: pitch === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${pitch === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: pitch === val ? 500 : 400 }}>{lbl}</button>
+            ))}
+          </div>
+          {pitch === "flat" && roofType === "metal" && <p style={{ fontSize: 12, color: "#2a9d56", margin: "4px 0 0" }}>Flat metal roof — no pitch surcharge applies</p>}
         </div>
 
         <div>
@@ -397,7 +419,7 @@ function UpdateScreen({ selectedJob, setSelectedJob, saveUpdate, setScreen }) {
           <div style={{ padding: "12px 14px", background: "var(--surface-1)", borderRadius: "var(--radius)", border: "0.5px solid var(--border)" }}>
             <p style={{ ...sl, margin: "0 0 8px" }}>Profit snapshot</p>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Labour (incl. 1hr drive): ${Math.round(totalHours * 35)}</p>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>CAC + fuel: $100</p>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>CAC: $80</p>
             {selectedJob.storeys === "Double storey" && <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Double storey premium: $150</p>}
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Total cost: ${cost.toFixed(0)}</p>
             <p style={{ fontSize: 15, color: margin >= 20 ? "#2a9d56" : "var(--text-warning)", fontWeight: 500, margin: "6px 0 0", borderTop: "0.5px solid var(--border)", paddingTop: 6 }}>
@@ -424,6 +446,8 @@ export default function App() {
   const [windowType, setWindowType] = useState("standard");
   const [roofM2, setRoofM2] = useState("");
   const [features, setFeatures] = useState({});
+  const [roofType, setRoofType] = useState("tile");
+  const [pitch, setPitch] = useState("standard");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [error, setError] = useState(null);
@@ -449,7 +473,7 @@ export default function App() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null, features }),
+        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null, features, roofType, pitch }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -468,7 +492,7 @@ export default function App() {
     const job = {
       id: Date.now().toString(),
       status: "quoted",
-      address, bedrooms, storeys, propType, extraNotes, windowType, features, quote,
+      address, bedrooms, storeys, propType, extraNotes, windowType, features, roofType, pitch, quote,
       quotedPrice: quote.windows?.opening,
       estimatedHours: quote.estimated_hours,
       suburb: address.split(",").slice(-2, -1)[0]?.trim() || "",
@@ -516,6 +540,8 @@ export default function App() {
           windowType={windowType} setWindowType={setWindowType}
           roofM2={roofM2} setRoofM2={setRoofM2}
           features={features} setFeatures={setFeatures}
+          roofType={roofType} setRoofType={setRoofType}
+          pitch={pitch} setPitch={setPitch}
           loading={loading} generateQuote={generateQuote}
           saveQuoteAsJob={saveQuoteAsJob} saveMsg={saveMsg}
           quote={quote} activeTab={activeTab} setActiveTab={setActiveTab}
