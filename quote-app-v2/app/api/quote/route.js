@@ -1,197 +1,236 @@
 import { NextResponse } from "next/server";
 import { getJobs } from "@/lib/jobs";
 
-// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+// ─── BUSINESS RULES ──────────────────────────────────────────────────────────
 
-const HARD_FLOOR = 220;
-const CAC = 80;
-const FUEL = 20;
-const HOURLY = 35;
+const HOURLY_RATE = 35;          // cleaner wage per hour
+const DRIVE_TIME_HOURS = 1;      // 30 min there + 30 min back, paid
+const CAC = 80;                  // customer acquisition cost
+const FUEL = 20;                 // fuel per job
+const DS_PREMIUM = 150;          // double storey danger/harness premium
+const TARGET_MARGIN = 0.30;      // 30% target profit margin
+const FLOOR_MARGIN = 0.15;       // 15% absolute minimum margin
+const MIN_HOURS = 2;             // minimum 2 hours any job
+const MIN_CHARGE = 200;          // minimum charge inside+outside
+const MIN_OUTSIDE_CHARGE = 220;  // minimum charge outside only
+const DS_MIN_CHARGE = 400;       // double storey minimum
 
 // ─── WINDOW TYPE SURCHARGES ──────────────────────────────────────────────────
 
 const WINDOW_SURCHARGES = {
-  "standard":           0,
-  "half_colonial":      75,
-  "front_colonial":     50,
-  "colonial_6":         125,
-  "colonial_8":         200,
-  "colonial_10":        250,
-  "colonial_10plus":    300,
+  "standard":        0,
+  "half_colonial":   75,
+  "front_colonial":  50,
+  "colonial_6":      125,
+  "colonial_8":      200,
+  "colonial_10":     250,
+  "colonial_10plus": 300,
 };
 
 const WINDOW_TYPE_LABELS = {
-  "standard":           "Standard windows",
-  "half_colonial":      "Half colonial",
-  "front_colonial":     "Front colonial only",
-  "colonial_6":         "Full colonial 6-pane",
-  "colonial_8":         "Full colonial 8-pane",
-  "colonial_10":        "Full colonial 10-pane",
-  "colonial_10plus":    "Full colonial 10+ pane",
+  "standard":        "Standard windows",
+  "half_colonial":   "Half colonial",
+  "front_colonial":  "Front colonial only",
+  "colonial_6":      "Full colonial 6-pane",
+  "colonial_8":      "Full colonial 8-pane",
+  "colonial_10":     "Full colonial 10-pane",
+  "colonial_10plus": "Full colonial 10+ pane",
 };
 
-// ─── TIME ESTIMATION ─────────────────────────────────────────────────────────
-// Based on real job data:
-// Single: 140m² = 1.75hrs, 230m² = 3.75hrs
-// Double: 154m² = 2hrs, 296m² = 6.25hrs
+// ─── FEATURE SURCHARGES ──────────────────────────────────────────────────────
 
-function estimateHours(roofM2, storeys) {
-  if (storeys === "Double storey") {
-    // Linear interpolation based on real data points
-    // 154m² = 2hrs, 296m² = 6.25hrs
-    // slope = (6.25 - 2) / (296 - 154) = 4.25 / 142 = 0.02993 hrs per m²
-    const hours = 2 + (roofM2 - 154) * (4.25 / 142);
-    return Math.max(1.5, Math.round(hours * 4) / 4); // round to nearest 0.25
-  } else {
-    // Single storey
-    // 140m² = 1.75hrs, 230m² = 3.75hrs
-    // slope = (3.75 - 1.75) / (230 - 140) = 2 / 90 = 0.02222 hrs per m²
-    const hours = 1.75 + (roofM2 - 140) * (2 / 90);
-    return Math.max(1, Math.round(hours * 4) / 4);
-  }
-}
+const FEATURE_SURCHARGES = {
+  large_sliding_doors: 30,
+  large_living_glass:  30,
+  pool_windows:        25,
+  pool_fencing:        30,
+  difficult_access:    30,
+  high_window_count:   30,
+};
 
-function formatTime(hours) {
-  const low = Math.max(1, hours - 0.25);
-  const high = hours + 0.25;
-  return `${low}–${high} hrs`;
-}
+// ─── BASE HOURS BY PROPERTY ──────────────────────────────────────────────────
+// Based on real job data — calibrated from actual completed jobs
 
-// ─── HISTORICAL LEARNING ─────────────────────────────────────────────────────
-// Adjusts time estimate based on completed jobs with similar profile
-
-function getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType) {
-  const completed = jobs.filter(j =>
-    j.actualHours &&
-    j.bedrooms === bedrooms &&
-    j.storeys === storeys &&
-    j.windowType === windowType &&
-    j.quote?.roof_m2 &&
-    Math.abs(j.quote.roof_m2 - roofM2) < 40 // within 40m² of this property
-  );
-
-  if (completed.length === 0) return null;
-
-  const avgHours = completed.reduce((sum, j) => sum + parseFloat(j.actualHours), 0) / completed.length;
-  return {
-    hours: Math.round(avgHours * 4) / 4,
-    sampleSize: completed.length,
-    note: `Based on ${completed.length} similar job${completed.length > 1 ? "s" : ""} you've completed`
-  };
-}
-
-// ─── PRICE CALCULATOR ────────────────────────────────────────────────────────
-
-function calcPrice(baseHours, basePrice, windowSurcharge) {
-  const cost = Math.round(baseHours * HOURLY + CAC + FUEL);
-  const totalBase = basePrice + windowSurcharge;
-
-  const opening = Math.max(totalBase, Math.round(cost / 0.62 / 5) * 5);
-  const fallback = Math.max(Math.round(cost / 0.70 / 5) * 5, HARD_FLOOR);
-  const floor = Math.max(Math.ceil(cost * 1.10 / 5) * 5, HARD_FLOOR);
-
-  const m = (price) => Math.round(((price - cost) / price) * 100);
-
-  return {
-    cost,
-    opening, fallback, floor,
-    opening_margin: m(opening),
-    fallback_margin: m(fallback),
-    floor_margin: m(floor),
-  };
-}
-
-// ─── BASE WINDOW PRICE BY BEDROOMS ───────────────────────────────────────────
-
-function getWindowBase(bedrooms, storeys, propType) {
+function getBaseHours(bedrooms, storeys, propType, roofM2) {
   const isDouble = storeys === "Double storey";
-  const isTownhouse = propType === "Townhouse";
   const isUnit = propType === "Unit / apartment";
+  const isTownhouse = propType === "Townhouse";
 
-  if (isUnit) return { base: 280, gutBase: 220 };
-  if (isTownhouse) return { base: 470, gutBase: 445 };
+  let hours;
 
-  const single = { "1": 290, "2": 320, "3": 365, "4": 395, "5": 425, "6+": 455 };
-  const double = { "1": 450, "2": 470, "3": 510, "4": 560, "5": 620, "6+": 680 };
-  const gutSingle = { "1": 220, "2": 250, "3": 355, "4": 385, "5": 410, "6+": 435 };
-  const gutDouble = { "1": 445, "2": 445, "3": 465, "4": 500, "5": 540, "6+": 580 };
+  if (isUnit) {
+    hours = 1.5;
+  } else if (isTownhouse) {
+    hours = 2.5;
+  } else if (isDouble) {
+    // Double storey — calibrated to: 154m²=2hrs, 296m²=6.25hrs
+    // slope = (6.25-2)/(296-154) = 0.02993 per m²
+    const roof = roofM2 || 180;
+    hours = 2 + (roof - 154) * (4.25 / 142);
+  } else {
+    // Single storey — calibrated to: 140m²=1.75hrs, 230m²=3.75hrs
+    // slope = (3.75-1.75)/(230-140) = 0.02222 per m²
+    const roof = roofM2 || 170;
+    hours = 1.75 + (roof - 140) * (2 / 90);
+  }
 
-  const key = String(bedrooms);
-  return {
-    base: isDouble ? (double[key] || 510) : (single[key] || 365),
-    gutBase: isDouble ? (gutDouble[key] || 465) : (gutSingle[key] || 355),
-  };
+  // Bedroom adjustment on top of roof-based estimate
+  const brAdjust = { "1": -0.25, "2": 0, "3": 0, "4": 0.25, "5": 0.5, "6+": 0.75 };
+  hours += brAdjust[String(bedrooms)] || 0;
+
+  // Enforce minimum 2 hours
+  return Math.max(MIN_HOURS, Math.round(hours * 4) / 4);
 }
 
 // ─── ROOF SIZE ADJUSTMENT ────────────────────────────────────────────────────
 
 function getRoofAdjustment(roofM2, storeys) {
   if (!roofM2) return 0;
-  const avg = storeys === "Double storey" ? 200 : 170;
+  const avg = storeys === "Double storey" ? 180 : 170;
   const diff = roofM2 - avg;
-  if (diff < -80) return -45;
-  if (diff < -50) return -30;
-  if (diff < -20) return -15;
-  if (diff < 20)  return 0;
-  if (diff < 50)  return 20;
-  if (diff < 80)  return 35;
-  if (diff < 120) return 50;
+  if (diff < -70) return -40;
+  if (diff < -40) return -25;
+  if (diff < -15) return -15;
+  if (diff < 15)  return 0;
+  if (diff < 40)  return 20;
+  if (diff < 70)  return 35;
+  if (diff < 100) return 50;
   return 70;
+}
+
+// ─── HISTORICAL LEARNING ─────────────────────────────────────────────────────
+
+function getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType) {
+  const completed = jobs.filter(j =>
+    j.actualHours &&
+    j.bedrooms === String(bedrooms) &&
+    j.storeys === storeys &&
+    j.windowType === windowType &&
+    j.quote?.roof_m2 &&
+    Math.abs(j.quote.roof_m2 - (roofM2 || 170)) < 40
+  );
+  if (!completed.length) return null;
+  const avg = completed.reduce((s, j) => s + parseFloat(j.actualHours), 0) / completed.length;
+  return {
+    hours: Math.max(MIN_HOURS, Math.round(avg * 4) / 4),
+    sampleSize: completed.length,
+    note: `Learned from ${completed.length} similar job${completed.length > 1 ? "s" : ""}`
+  };
+}
+
+// ─── PRICE CALCULATOR ────────────────────────────────────────────────────────
+
+function calcPrices(hours, isDouble, baseExtra, minCharge) {
+  // Total cost includes drive time
+  const totalHours = hours + DRIVE_TIME_HOURS;
+  const labourCost = totalHours * HOURLY_RATE;
+  const dangerPremium = isDouble ? DS_PREMIUM : 0;
+  const cost = Math.round(labourCost + CAC + FUEL + dangerPremium);
+
+  // Add any base extras (roof adj, features, colonial)
+  const adjustedCost = cost;
+
+  // Target 30% margin: price = cost / (1 - margin)
+  const rawOpening = cost / (1 - TARGET_MARGIN) + baseExtra;
+  const rawFallback = cost / (1 - 0.22) + baseExtra;  // ~22% margin fallback
+  const rawFloor = cost / (1 - FLOOR_MARGIN) + baseExtra;
+
+  const opening = Math.max(minCharge, Math.round(rawOpening / 5) * 5);
+  const fallback = Math.max(minCharge, Math.round(rawFallback / 5) * 5);
+  const floor = Math.max(minCharge, Math.ceil(rawFloor / 5) * 5);
+
+  const m = (p) => Math.round(((p - cost) / p) * 100);
+
+  return { cost, opening, fallback, floor, opening_margin: m(opening), fallback_margin: m(fallback), floor_margin: m(floor) };
+}
+
+// ─── FORMAT TIME ─────────────────────────────────────────────────────────────
+
+function fmtTime(hours) {
+  const lo = Math.max(1.5, hours - 0.25);
+  const hi = hours + 0.25;
+  return `${lo}–${hi} hrs`;
 }
 
 // ─── BUILD QUOTE ─────────────────────────────────────────────────────────────
 
-function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, jobs) {
-  const surcharge = WINDOW_SURCHARGES[windowType] ?? 0;
-  const { base, gutBase } = getWindowBase(bedrooms, storeys, propType);
+function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, features, jobs) {
+  const isDouble = storeys === "Double storey";
+  const isTownhouse = propType === "Townhouse";
+  const minCharge = isDouble ? DS_MIN_CHARGE : MIN_CHARGE;
+
+  // Time estimate
+  const baseHours = getBaseHours(bedrooms, storeys, propType, roofM2);
+  const learned = getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType);
+  const hours = learned ? learned.hours : baseHours;
+
+  // Surcharges
   const roofAdj = getRoofAdjustment(roofM2, storeys);
-  const finalBase = base + roofAdj;
-  const finalGutBase = gutBase + Math.round(roofAdj * 0.5);
+  const colSurcharge = WINDOW_SURCHARGES[windowType] || 0;
+  const featSurcharge = Object.entries(features || {})
+    .filter(([, v]) => v)
+    .reduce((sum, [k]) => sum + (FEATURE_SURCHARGES[k] || 0), 0);
+  const totalExtra = roofAdj + colSurcharge + featSurcharge;
 
-  const estHours = estimateHours(roofM2 || 170, storeys);
-  const learned = getLearnedHours(jobs, bedrooms, storeys, roofM2 || 170, windowType);
-  const finalHours = learned ? learned.hours : estHours;
+  // Windows full price
+  const win = calcPrices(hours, isDouble, totalExtra, minCharge);
 
-  const winPrices = calcPrice(finalHours, finalBase, surcharge);
-  const gutPrices = calcPrice(finalHours * 0.6, finalGutBase, 0);
+  // Gutters — roughly 55% of window time, separate calculation
+  const gutHours = Math.max(1, Math.round(hours * 0.55 * 4) / 4);
+  const gutMin = isDouble ? 445 : 220;
+  const gut = calcPrices(gutHours, isDouble, roofAdj * 0.5, gutMin);
+
+  // Outside only — 65% of full price, + $100 flat for double storey (roof/harness/ladder), min $220
+  const outsidePct = 0.65;
+  const outsideDSFlat = isDouble ? 100 : 0;
+  const outsideOpening = Math.max(MIN_OUTSIDE_CHARGE, Math.round((win.opening * outsidePct + outsideDSFlat) / 5) * 5);
+  const outsideFallback = Math.max(MIN_OUTSIDE_CHARGE, Math.round((win.fallback * outsidePct + outsideDSFlat) / 5) * 5);
+  const outsideFloor = Math.max(MIN_OUTSIDE_CHARGE, Math.round((win.floor * outsidePct + outsideDSFlat) / 5) * 5);
+  const outsideCost = Math.round(win.cost * outsidePct + outsideDSFlat);
+  const om = (p) => Math.round(((p - outsideCost) / p) * 100);
 
   // Combo — 10% off, single CAC
-  const comboCost = Math.round(winPrices.cost + gutPrices.cost - CAC);
-  const comboOpen = Math.round((winPrices.opening + gutPrices.opening) * 0.90 / 5) * 5;
-  const comboFall = Math.round((winPrices.fallback + gutPrices.fallback) * 0.90 / 5) * 5;
-  const comboFloor = Math.max(Math.ceil(comboCost * 1.10 / 5) * 5, HARD_FLOOR);
+  const comboCost = Math.round(win.cost + gut.cost - CAC);
+  const comboOpen = Math.max(minCharge + gutMin, Math.round((win.opening + gut.opening) * 0.90 / 5) * 5);
+  const comboFall = Math.max(minCharge + gutMin, Math.round((win.fallback + gut.fallback) * 0.90 / 5) * 5);
+  const comboFloor = Math.max(minCharge + gutMin, Math.ceil(comboCost / (1 - FLOOR_MARGIN) / 5) * 5);
   const cm = (p) => Math.round(((p - comboCost) / p) * 100);
 
   const timeLabel = learned
-    ? `${finalHours} hrs (learned from ${learned.sampleSize} similar job${learned.sampleSize > 1 ? "s" : ""})`
-    : formatTime(estHours);
+    ? `${hours} hrs (${learned.note})`
+    : fmtTime(hours);
 
   const roofLabel = roofM2
-    ? `${roofM2}m² measured · ${bedrooms}BR ${storeys.toLowerCase()}`
+    ? `${roofM2}m² · ${bedrooms}BR ${storeys.toLowerCase()}`
     : `${bedrooms}BR ${storeys.toLowerCase()} · roof not measured`;
+
+  const includesLabel = [
+    roofLabel,
+    WINDOW_TYPE_LABELS[windowType] || "Standard",
+    isDouble ? "+$150 double storey premium" : null,
+    roofAdj !== 0 ? `roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : null,
+    colSurcharge ? `colonial +$${colSurcharge}` : null,
+    featSurcharge ? `features +$${featSurcharge}` : null,
+  ].filter(Boolean).join(" · ");
 
   return {
     windows: {
-      opening: winPrices.opening,
-      fallback: winPrices.fallback,
-      floor: winPrices.floor,
-      opening_margin: winPrices.opening_margin,
-      fallback_margin: winPrices.fallback_margin,
-      floor_margin: winPrices.floor_margin,
-      cost: winPrices.cost,
+      ...win, time: timeLabel, includes: includesLabel,
+    },
+    outside_only: {
+      opening: outsideOpening,
+      fallback: outsideFallback,
+      floor: outsideFloor,
+      opening_margin: om(outsideOpening),
+      fallback_margin: om(outsideFallback),
+      floor_margin: om(outsideFloor),
+      cost: outsideCost,
       time: timeLabel,
-      includes: `${roofLabel} · ${WINDOW_TYPE_LABELS[windowType] || "standard"}${surcharge ? ` · +$${surcharge} colonial` : ""}${roofAdj !== 0 ? ` · roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : ""}`,
+      includes: `Outside only · 65% of full price${isDouble ? " + $100 roof/harness flat" : ""} · min $${MIN_OUTSIDE_CHARGE}`,
     },
     gutters: {
-      opening: gutPrices.opening,
-      fallback: gutPrices.fallback,
-      floor: gutPrices.floor,
-      opening_margin: gutPrices.opening_margin,
-      fallback_margin: gutPrices.fallback_margin,
-      floor_margin: gutPrices.floor_margin,
-      cost: gutPrices.cost,
-      time: formatTime(finalHours * 0.6),
-      includes: `${roofLabel} gutters`,
+      ...gut, time: fmtTime(gutHours),
+      includes: `${roofLabel} gutters${isDouble ? " · +$150 premium" : ""}`,
     },
     combo: {
       cost: comboCost,
@@ -199,35 +238,40 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, jobs
       standard_opening_margin: cm(comboOpen),
       standard_fallback_margin: cm(comboFall),
       standard_floor_margin: cm(comboFloor),
-      saving: (winPrices.opening + gutPrices.opening) - comboOpen,
+      saving: (win.opening + gut.opening) - comboOpen,
     },
-    estimated_hours: finalHours,
+    estimated_hours: hours,
     learned_time: learned,
     roof_m2: roofM2,
     roof_adj: roofAdj,
     window_type: windowType,
     window_type_label: WINDOW_TYPE_LABELS[windowType] || "Standard",
+    cost_breakdown: {
+      labour: Math.round((hours + DRIVE_TIME_HOURS) * HOURLY_RATE),
+      drive_time: Math.round(DRIVE_TIME_HOURS * HOURLY_RATE),
+      cac: CAC,
+      fuel: FUEL,
+      danger_premium: isDouble ? DS_PREMIUM : 0,
+      total_cost: win.cost,
+    }
   };
 }
 
 // ─── RESEARCH PROMPT ─────────────────────────────────────────────────────────
 
 const RESEARCH_PROMPT = `You are a property research assistant for a Melbourne window cleaning business.
-Find facts about the property. Do NOT calculate prices — pricing is handled by the system.
+Find facts about the property. Do NOT calculate prices.
 
 Search ONLY these sources. Exact address in quotes. Ignore results not for this specific property:
 1. site:realestate.com.au "[ADDRESS]" — sale history, listing photos
 2. site:domain.com.au "[ADDRESS]" — sale history, property value estimate
-3. "[ADDRESS] Melbourne street view" — access difficulty, pool fencing, trees near gutters, general property condition
+3. "[ADDRESS] Melbourne street view" — access difficulty, pool fencing, large glass areas, general condition
 4. Google Maps directions from "25 Margot Street Chadstone VIC" to "[ADDRESS]" — driving distance and time
 
 Return ONLY this JSON:
 {
   "address": "full address string",
   "property": "e.g. 3BR single-storey house",
-  "difficult_access": false,
-  "pool_fencing": false,
-  "extra_glass": false,
   "distance_km": "14.2 km",
   "drive_time": "22 min",
   "drive_time_mins": 22,
@@ -241,9 +285,6 @@ Return ONLY this JSON:
 }
 
 Rules:
-- difficult_access: true if narrow gates, steep block, tight paths
-- pool_fencing: true if glass pool fencing visible
-- extra_glass: true if unusually large floor-to-ceiling glass in living areas
 - drive_time_mins: integer only
 - travel_surcharge: 0 if under 40min, 25 if 40-60min, 45 if over 60min
 - distance_flag: "ok" under 30min, "moderate" 30-40min, "long" 40-60min, "very long" over 60min
@@ -255,28 +296,19 @@ Rules:
 
 export async function POST(request) {
   try {
-    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2 } = await request.json();
+    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2, features } = await request.json();
 
-    if (!address?.trim()) {
-      return NextResponse.json({ error: "Address is required" }, { status: 400 });
-    }
+    if (!address?.trim()) return NextResponse.json({ error: "Address is required" }, { status: 400 });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured." }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured." }, { status: 500 });
 
-    // Load historical jobs for learning
     const jobs = await getJobs();
 
-    // Get roof data
+    // Roof size — manual takes priority, then auto satellite
     let roofData = null;
     if (manualRoofM2 && manualRoofM2 > 0) {
-      roofData = {
-        roof_m2: manualRoofM2,
-        roof_description: `${manualRoofM2}m² — manually measured`,
-        confidence: "high"
-      };
+      roofData = { roof_m2: manualRoofM2, roof_description: `${manualRoofM2}m² — manually measured`, confidence: "high" };
     } else {
       roofData = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/roof`, {
         method: "POST",
@@ -287,13 +319,7 @@ export async function POST(request) {
 
     const roofM2 = roofData?.roof_m2 || null;
 
-    // Research the property
-    const userMessage = `Research this property:
-Address: ${address}
-Property: ${bedrooms}-bedroom ${storeys} ${propType}
-${extraNotes ? `Notes: ${extraNotes}` : ""}
-Search all 4 sources and return only the JSON.`;
-
+    // Research property
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -306,7 +332,7 @@ Search all 4 sources and return only the JSON.`;
         max_tokens: 800,
         system: RESEARCH_PROMPT,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: userMessage }],
+        messages: [{ role: "user", content: `Research this property:\nAddress: ${address}\nProperty: ${bedrooms}-bedroom ${storeys} ${propType}\n${extraNotes ? `Notes: ${extraNotes}` : ""}\nSearch all 4 sources and return only the JSON.` }],
       }),
     });
 
@@ -314,20 +340,16 @@ Search all 4 sources and return only the JSON.`;
     if (data.error) return NextResponse.json({ error: data.error.message }, { status: 500 });
 
     const fullText = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-
     let facts = null;
     const m1 = fullText.match(/\{[\s\S]*\}/);
     if (m1) { try { facts = JSON.parse(m1[0]); } catch {} }
     if (!facts) {
-      const stripped = fullText.replace(/```json|```/g, "").trim();
-      const m2 = stripped.match(/\{[\s\S]*\}/);
+      const m2 = fullText.replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
       if (m2) { try { facts = JSON.parse(m2[0]); } catch {} }
     }
-
     if (!facts) {
       facts = {
         address, property: `${bedrooms}BR ${storeys} ${propType}`,
-        difficult_access: false, pool_fencing: false, extra_glass: false,
         distance_km: "unknown", drive_time: "unknown", drive_time_mins: 0,
         distance_flag: "ok", travel_surcharge: 0,
         sale_history: "Could not retrieve", wealth_signal: "No data found",
@@ -335,12 +357,12 @@ Search all 4 sources and return only the JSON.`;
       };
     }
 
-    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, jobs);
+    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, features || {}, jobs);
 
     return NextResponse.json({
       ...facts,
       ...pricing,
-      roof_description: roofData?.roof_description || (roofM2 ? `${roofM2}m²` : "Not measured — using bedroom estimate"),
+      roof_description: roofData?.roof_description || (roofM2 ? `${roofM2}m²` : "Not measured — using time estimate"),
       roof_confidence: roofData?.confidence || "none",
     });
 
