@@ -4,9 +4,10 @@ import { getJobs } from "@/lib/jobs";
 // ─── BUSINESS RULES ──────────────────────────────────────────────────────────
 
 const HOURLY_RATE = 35;          // cleaner wage per hour
+const BILLABLE_RATE = 110;       // target billable rate per hour
 const DRIVE_TIME_HOURS = 1;      // 30 min there + 30 min back, paid
 const CAC = 80;                  // customer acquisition cost
-const FUEL = 20;                 // fuel per job
+const RATE_PER_KM = 0.85;        // $0.85 per km travel charge
 const DS_PREMIUM = 150;          // double storey danger/harness premium
 const TARGET_MARGIN = 0.30;      // 30% target profit margin
 const FLOOR_MARGIN = 0.15;       // 15% absolute minimum margin
@@ -14,6 +15,28 @@ const MIN_HOURS = 2;             // minimum 2 hours any job
 const MIN_CHARGE = 200;          // minimum charge inside+outside
 const MIN_OUTSIDE_CHARGE = 220;  // minimum charge outside only
 const DS_MIN_CHARGE = 400;       // double storey minimum
+
+// Travel fee tiers (on top of per-km charge)
+function getTravelFee(distanceKm, driveTimeMins) {
+  const kmCharge = Math.round(distanceKm * RATE_PER_KM * 100) / 100;
+  let timeFee = 0;
+  if (driveTimeMins > 45) timeFee = 35;
+  else if (driveTimeMins > 20) timeFee = 12;
+  return Math.round((kmCharge + timeFee) * 100) / 100;
+}
+
+// Roof type surcharges
+const ROOF_TYPE_TIME = { "tile": 0, "metal": 0.75 }; // extra hours for metal
+
+// Roof pitch surcharges
+const PITCH_SURCHARGES = { "flat": 0, "standard": 0, "steep": 65, "very_steep": 100 };
+
+const PITCH_LABELS = {
+  "flat": "Flat/low pitch",
+  "standard": "Standard pitch",
+  "steep": "Steep pitch",
+  "very_steep": "Very steep pitch",
+};
 
 // ─── WINDOW TYPE SURCHARGES ──────────────────────────────────────────────────
 
@@ -59,22 +82,44 @@ function getBaseHours(bedrooms, storeys, propType, roofM2) {
   let hours;
 
   if (isUnit) {
-    hours = 1.5;
+    hours = 2;
   } else if (isTownhouse) {
-    hours = 2.5;
+    hours = 3;
   } else if (isDouble) {
-    // Double storey — calibrated to: 154m²=2hrs, 296m²=6.25hrs
-    // slope = (6.25-2)/(296-154) = 0.02993 per m²
-    const roof = roofM2 || 180;
-    hours = 2 + (roof - 154) * (4.25 / 142);
+    // Double storey anchor points (confirmed by owner):
+    // 170m² = 6hrs, 230m² = 6.5hrs, 296m² = 7hrs
+    // Below 170: interpolate down from 6hrs
+    // slope low: (6-4)/(170-120) = 0.04 per m²
+    // slope high: (7-6)/(296-170) = 0.00794 per m²
+    const roof = roofM2 || 200;
+    if (roof <= 120) {
+      hours = 4;
+    } else if (roof <= 170) {
+      hours = 4 + (roof - 120) * (2 / 50);
+    } else if (roof <= 230) {
+      hours = 6 + (roof - 170) * (0.5 / 60);
+    } else {
+      hours = 6.5 + (roof - 230) * (0.5 / 66);
+    }
   } else {
-    // Single storey — calibrated to: 140m²=1.75hrs, 230m²=3.75hrs
-    // slope = (3.75-1.75)/(230-140) = 0.02222 per m²
+    // Single storey anchor points (confirmed by owner):
+    // 100m² = 2hrs (minimum), 140m² = 3hrs, 170m² = 3hrs, 230m² = 4hrs, 270m²+ = 4.5hrs
     const roof = roofM2 || 170;
-    hours = 1.75 + (roof - 140) * (2 / 90);
+    if (roof <= 100) {
+      hours = 2;
+    } else if (roof <= 170) {
+      // 100m²=2hrs to 170m²=3hrs: slope = 1/70
+      hours = 2 + (roof - 100) * (1 / 70);
+    } else if (roof <= 230) {
+      // 170m²=3hrs to 230m²=4hrs: slope = 1/60
+      hours = 3 + (roof - 170) * (1 / 60);
+    } else {
+      // 230m²=4hrs to 270m²=4.5hrs: slope = 0.5/40
+      hours = 4 + (roof - 230) * (0.5 / 40);
+    }
   }
 
-  // Bedroom adjustment on top of roof-based estimate
+  // Bedroom adjustment
   const brAdjust = { "1": -0.25, "2": 0, "3": 0, "4": 0.25, "5": 0.5, "6+": 0.75 };
   hours += brAdjust[String(bedrooms)] || 0;
 
@@ -120,20 +165,19 @@ function getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType) {
 
 // ─── PRICE CALCULATOR ────────────────────────────────────────────────────────
 
-function calcPrices(hours, isDouble, baseExtra, minCharge) {
-  // Total cost includes drive time
+function calcPrices(hours, isDouble, baseExtra, minCharge, travelCost) {
+  // Total cost includes drive time + travel charges
   const totalHours = hours + DRIVE_TIME_HOURS;
   const labourCost = totalHours * HOURLY_RATE;
   const dangerPremium = isDouble ? DS_PREMIUM : 0;
-  const cost = Math.round(labourCost + CAC + FUEL + dangerPremium);
+  const travel = travelCost || 0;
+  const cost = Math.round(labourCost + CAC + dangerPremium + travel);
 
-  // Add any base extras (roof adj, features, colonial)
-  const adjustedCost = cost;
-
-  // Target 30% margin: price = cost / (1 - margin)
-  const rawOpening = cost / (1 - TARGET_MARGIN) + baseExtra;
-  const rawFallback = cost / (1 - 0.22) + baseExtra;  // ~22% margin fallback
-  const rawFloor = cost / (1 - FLOOR_MARGIN) + baseExtra;
+  // Opening = $110/hr billable rate × hours + extras + travel
+  const billableRevenue = Math.round(hours * BILLABLE_RATE);
+  const rawOpening = billableRevenue + baseExtra + travel;
+  const rawFallback = Math.round(cost / (1 - 0.22)) + baseExtra;
+  const rawFloor = Math.ceil(cost / (1 - FLOOR_MARGIN)) + baseExtra;
 
   const opening = Math.max(minCharge, Math.round(rawOpening / 5) * 5);
   const fallback = Math.max(minCharge, Math.round(rawFallback / 5) * 5);
@@ -154,13 +198,14 @@ function fmtTime(hours) {
 
 // ─── BUILD QUOTE ─────────────────────────────────────────────────────────────
 
-function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, features, jobs) {
+function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, features, roofType, pitch, jobs) {
   const isDouble = storeys === "Double storey";
   const isTownhouse = propType === "Townhouse";
   const minCharge = isDouble ? DS_MIN_CHARGE : MIN_CHARGE;
 
   // Time estimate
-  const baseHours = getBaseHours(bedrooms, storeys, propType, roofM2);
+  const baseHoursRaw = getBaseHours(bedrooms, storeys, propType, roofM2);
+  const baseHours = Math.round((baseHoursRaw + metalExtra) * 4) / 4;
   const learned = getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType);
   const hours = learned ? learned.hours : baseHours;
 
@@ -173,12 +218,12 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
   const totalExtra = roofAdj + colSurcharge + featSurcharge;
 
   // Windows full price
-  const win = calcPrices(hours, isDouble, totalExtra, minCharge);
+  const win = calcPrices(hours, isDouble, totalExtra, minCharge, travelCost);
 
   // Gutters — roughly 55% of window time, separate calculation
   const gutHours = Math.max(1, Math.round(hours * 0.55 * 4) / 4);
   const gutMin = isDouble ? 445 : 220;
-  const gut = calcPrices(gutHours, isDouble, roofAdj * 0.5, gutMin);
+  const gut = calcPrices(gutHours, isDouble, roofAdj * 0.5, gutMin, travelCost * 0.5);
 
   // Outside only — 65% of full price, + $100 flat for double storey (roof/harness/ladder), min $220
   const outsidePct = 0.65;
@@ -207,10 +252,13 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
   const includesLabel = [
     roofLabel,
     WINDOW_TYPE_LABELS[windowType] || "Standard",
+    roofType === "metal" ? "metal roof +45min" : null,
+    pitch && pitch !== "standard" ? `${PITCH_LABELS[pitch]}${pitchSurcharge ? ` +$${pitchSurcharge}` : ""}` : null,
     isDouble ? "+$150 double storey premium" : null,
     roofAdj !== 0 ? `roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : null,
     colSurcharge ? `colonial +$${colSurcharge}` : null,
     featSurcharge ? `features +$${featSurcharge}` : null,
+    travelCost > 0 ? `travel $${travelCost.toFixed(0)}` : null,
   ].filter(Boolean).join(" · ");
 
   return {
@@ -250,8 +298,12 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
       labour: Math.round((hours + DRIVE_TIME_HOURS) * HOURLY_RATE),
       drive_time: Math.round(DRIVE_TIME_HOURS * HOURLY_RATE),
       cac: CAC,
-      fuel: FUEL,
+      travel_km_charge: Math.round(distanceKm * RATE_PER_KM),
+      travel_time_fee: driveTimeMins > 45 ? 35 : driveTimeMins > 20 ? 12 : 0,
+      travel_total: travelCost,
       danger_premium: isDouble ? DS_PREMIUM : 0,
+      pitch_surcharge: pitchSurcharge,
+      metal_extra_time: metalExtra > 0 ? "45 min" : null,
       total_cost: win.cost,
     }
   };
@@ -296,7 +348,7 @@ Rules:
 
 export async function POST(request) {
   try {
-    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2, features } = await request.json();
+    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2, features, roofType, pitch } = await request.json();
 
     if (!address?.trim()) return NextResponse.json({ error: "Address is required" }, { status: 400 });
 
@@ -357,7 +409,7 @@ export async function POST(request) {
       };
     }
 
-    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, features || {}, jobs);
+    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, features || {}, roofType || "tile", pitch || "standard", jobs);
 
     return NextResponse.json({
       ...facts,
