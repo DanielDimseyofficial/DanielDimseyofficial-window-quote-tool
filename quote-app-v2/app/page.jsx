@@ -7,10 +7,27 @@ const BEDROOMS = ["1", "2", "3", "4", "5", "6+"];
 const STATUS_LABELS = { lead: "Lead", quoted: "Quoted", booked: "Booked", completed: "Completed", lost: "Lost" };
 const STATUS_COLORS = { lead: "#6b7280", quoted: "#9a6b00", booked: "#1d4ed8", completed: "#2a9d56", lost: "#b3261e" };
 
-const labelStyle = { fontSize: 12, color: "var(--text-muted)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" };
-const sectionLabel = { fontSize: 12, fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 6px" };
+const WINDOW_TYPES = [
+  ["standard", "Standard"],
+  ["half_colonial", "Half colonial"],
+  ["front_colonial", "Front colonial only"],
+  ["colonial_6", "Colonial 6-pane"],
+  ["colonial_8", "Colonial 8-pane"],
+  ["colonial_10", "Colonial 10-pane"],
+  ["colonial_10plus", "Colonial 10+ pane"],
+];
 
-// ── Stateless components defined OUTSIDE App so they never remount on re-render ──
+const FEATURES = [
+  ["large_sliding_doors", "Large sliding doors / alfresco"],
+  ["large_living_glass", "Large open plan living glass"],
+  ["pool_windows", "Pool-facing windows"],
+  ["pool_fencing", "Glass pool fencing"],
+  ["difficult_access", "Difficult access"],
+  ["high_window_count", "High window count"],
+];
+
+const ls = { fontSize: 12, color: "var(--text-muted)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" };
+const sl = { fontSize: 12, fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 6px" };
 
 function Pill({ value, current, onClick }) {
   return (
@@ -20,18 +37,19 @@ function Pill({ value, current, onClick }) {
   );
 }
 
-function PriceBlock({ label, opening, fallback, floor, openingMargin, fallbackMargin, floorMargin, cost, time, includes, highlight }) {
+function PriceBlock({ label, opening, fallback, floor, openingMargin, fallbackMargin, floorMargin, cost, time, includes, highlight, costBreakdown }) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
   return (
     <div style={{ padding: "14px 16px", borderRadius: "var(--radius)", background: highlight ? "var(--bg-warning)" : "var(--surface-1)", border: `0.5px solid ${highlight ? "var(--border-warning)" : "var(--border)"}`, marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
         <p style={{ fontSize: 12, fontWeight: 500, color: highlight ? "var(--text-warning)" : "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: 0 }}>{label}</p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{time}{cost ? ` · cost $${cost}` : ""}</p>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{time}</p>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         {[
           { label: "Open with", price: opening, margin: openingMargin, color: "var(--text-primary)", mc: "#2a9d56" },
           { label: "If hesitant", price: fallback, margin: fallbackMargin, color: "var(--text-secondary)", mc: "var(--text-secondary)" },
-          { label: "Floor (10%)", price: floor, margin: floorMargin, color: "var(--text-muted)", mc: "var(--text-warning)" },
+          { label: "Floor (15%)", price: floor, margin: floorMargin, color: "var(--text-muted)", mc: "var(--text-warning)" },
         ].map(t => (
           <div key={t.label} style={{ flex: 1, textAlign: "center", padding: "8px 4px", background: "var(--surface-2)", borderRadius: "var(--radius)" }}>
             <p style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em", margin: "0 0 3px" }}>{t.label}</p>
@@ -40,7 +58,24 @@ function PriceBlock({ label, opening, fallback, floor, openingMargin, fallbackMa
           </div>
         ))}
       </div>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, fontStyle: "italic" }}>{includes}</p>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px", fontStyle: "italic" }}>{includes}</p>
+      {costBreakdown && (
+        <>
+          <button onClick={() => setShowBreakdown(!showBreakdown)} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+            {showBreakdown ? "▲ Hide" : "▼ Show"} cost breakdown · total cost ${cost}
+          </button>
+          {showBreakdown && (
+            <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--surface-2)", borderRadius: "var(--radius)", fontSize: 12, color: "var(--text-secondary)" }}>
+              <p style={{ margin: "0 0 3px" }}>Labour: ${costBreakdown.labour} ({costBreakdown.labour / 35}hrs × $35)</p>
+              <p style={{ margin: "0 0 3px" }}>Drive time: ${costBreakdown.drive_time} (1hr × $35)</p>
+              <p style={{ margin: "0 0 3px" }}>CAC: ${costBreakdown.cac}</p>
+              <p style={{ margin: "0 0 3px" }}>Fuel: ${costBreakdown.fuel}</p>
+              {costBreakdown.danger_premium > 0 && <p style={{ margin: "0 0 3px" }}>Double storey premium: ${costBreakdown.danger_premium}</p>}
+              <p style={{ margin: "6px 0 0", fontWeight: 500, color: "var(--text-primary)", borderTop: "0.5px solid var(--border)", paddingTop: 6 }}>Total cost: ${costBreakdown.total_cost}</p>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -50,12 +85,10 @@ function colonialCfg(s) {
     confirmed: { bg: "var(--bg-warning)", color: "var(--text-warning)", label: "Colonial confirmed" },
     uncertain: { bg: "var(--bg-warning)", color: "var(--text-warning)", label: "Colonial uncertain — verify" },
     none: { bg: "var(--surface-1)", color: "var(--text-muted)", label: "No colonial detected" },
-  }[s] || { bg: "var(--surface-1)", color: "var(--text-muted)", label: "Unknown" });
+  }[s] || { bg: "var(--surface-1)", color: "var(--text-muted)", label: "—" });
 }
 
-// ── Screens as proper top-level components ──
-
-function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
+function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, features, setFeatures, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
   return (
     <div style={{ padding: "0 0 80px" }}>
       <div style={{ marginBottom: 20 }}>
@@ -65,7 +98,7 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
 
       <div style={{ background: "var(--surface-2)", border: "0.5px solid var(--border)", borderRadius: 12, padding: "1.25rem", display: "flex", flexDirection: "column", gap: 16 }}>
         <div>
-          <label style={labelStyle}>Property address</label>
+          <label style={ls}>Property address</label>
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <input type="text" value={address} onChange={e => setAddress(e.target.value)} onKeyDown={e => e.key === "Enter" && generateQuote()} placeholder="e.g. 42 Elm Street, Hawthorn VIC 3122" style={{ flex: 1, fontSize: 15 }} />
             <button onClick={() => address && window.open(`https://www.google.com/maps/search/${encodeURIComponent(address)}`, "_blank")} style={{ padding: "0 14px", background: "var(--surface-1)", color: "var(--text-primary)", border: "0.5px solid var(--border)", flexShrink: 0, width: 44 }}>
@@ -75,60 +108,63 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
         </div>
 
         <div>
-          <label style={labelStyle}>Storeys</label>
+          <label style={ls}>Storeys</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             {STOREYS.map(s => <Pill key={s} value={s} current={storeys} onClick={setStoreys} />)}
           </div>
         </div>
+
         <div>
-          <label style={labelStyle}>Property type</label>
+          <label style={ls}>Property type</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             {TYPES.map(t => <Pill key={t} value={t} current={propType} onClick={setPropType} />)}
           </div>
         </div>
+
         <div>
-          <label style={labelStyle}>Bedrooms</label>
+          <label style={ls}>Bedrooms</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             {BEDROOMS.map(b => <Pill key={b} value={b} current={bedrooms} onClick={setBedrooms} />)}
           </div>
         </div>
+
         <div>
-          <label style={labelStyle}>Window type</label>
+          <label style={ls}>Window type</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-            {[
-              ["standard", "Standard"],
-              ["half_colonial", "Half colonial"],
-              ["front_colonial", "Front colonial only"],
-              ["colonial_6", "Colonial 6-pane"],
-              ["colonial_8", "Colonial 8-pane"],
-              ["colonial_10", "Colonial 10-pane"],
-              ["colonial_10plus", "Colonial 10+ pane"],
-            ].map(([val, lbl]) => (
-              <button key={val} onClick={() => setWindowType(val)} style={{
-                padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer",
-                background: windowType === val ? "var(--text-primary)" : "var(--surface-1)",
-                color: windowType === val ? "var(--bg)" : "var(--text-secondary)",
-                border: `0.5px solid ${windowType === val ? "var(--text-primary)" : "var(--border)"}`,
-                fontWeight: windowType === val ? 500 : 400,
-              }}>{lbl}</button>
+            {WINDOW_TYPES.map(([val, lbl]) => (
+              <button key={val} onClick={() => setWindowType(val)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: windowType === val ? "var(--text-primary)" : "var(--surface-1)", color: windowType === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${windowType === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: windowType === val ? 500 : 400 }}>{lbl}</button>
             ))}
           </div>
         </div>
 
         <div>
-          <label style={labelStyle}>Customer notes <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
-          <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Pool, colonial windows, narrow gate, lots of trees..." rows={2} style={{ marginTop: 6, resize: "vertical" }} />
+          <label style={ls}>Property features <span style={{ fontWeight: 400, textTransform: "none" }}>(tick all that apply)</span></label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {FEATURES.map(([key, label]) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 14, color: "var(--text-secondary)" }}>
+                <input type="checkbox" checked={!!features[key]} onChange={e => setFeatures(f => ({ ...f, [key]: e.target.checked }))}
+                  style={{ width: 16, height: 16, cursor: "pointer" }} />
+                {label}
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>+${key === "pool_fencing" ? "30" : key === "pool_windows" ? "25" : "30"}</span>
+              </label>
+            ))}
+          </div>
         </div>
+
         <div>
-          <label style={labelStyle}>Roof size (m²) <span style={{ fontWeight: 400, textTransform: "none" }}>— measure on Google Earth for exact pricing</span></label>
+          <label style={ls}>Roof size (m²) <span style={{ fontWeight: 400, textTransform: "none" }}>— measure on Google Earth</span></label>
           <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
             <input type="number" value={roofM2} onChange={e => setRoofM2(e.target.value)} placeholder="e.g. 165 — leave blank to auto-estimate" style={{ flex: 1 }} />
-            <button onClick={() => window.open(`https://earth.google.com/web/search/${encodeURIComponent(address)}`, "_blank")} title="Open in Google Earth" style={{ padding: "0 14px", background: "var(--surface-1)", color: "var(--text-primary)", border: "0.5px solid var(--border)", flexShrink: 0, width: 44, height: 42 }}>
-              🌍
-            </button>
+            <button onClick={() => window.open(`https://earth.google.com/web/search/${encodeURIComponent(address)}`, "_blank")} title="Open in Google Earth" style={{ padding: "0 14px", background: "var(--surface-1)", color: "var(--text-primary)", border: "0.5px solid var(--border)", flexShrink: 0, width: 44, height: 42 }}>🌍</button>
           </div>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0" }}>In Google Earth: click the polygon tool → trace the roof → read the m² → type it here</p>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0" }}>Google Earth → polygon tool → trace roof → read m² → type here</p>
         </div>
+
+        <div>
+          <label style={ls}>Customer notes <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
+          <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="Anything the customer mentioned..." rows={2} style={{ marginTop: 6, resize: "vertical" }} />
+        </div>
+
         <button onClick={generateQuote} disabled={!address.trim() || loading} style={{ width: "100%", padding: "11px 0", fontSize: 14, fontWeight: 500, opacity: address.trim() && !loading ? 1 : 0.5, cursor: address.trim() && !loading ? "pointer" : "not-allowed", background: "var(--text-primary)", color: "var(--bg)", border: "none" }}>
           {loading
             ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><i className="ti ti-loader-2" style={{ fontSize: 16, animation: "spin 1s linear infinite" }} />Researching property...</span>
@@ -147,7 +183,11 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{quote.property}</p>
                 <p style={{ fontSize: 16, fontWeight: 500, margin: "2px 0 8px", color: "var(--text-primary)" }}>{quote.address}</p>
-                <span style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: colonialCfg(quote.colonial).bg, color: colonialCfg(quote.colonial).color }}>{colonialCfg(quote.colonial).label}</span>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: "var(--surface-1)", color: "var(--text-secondary)", border: "0.5px solid var(--border)" }}>{quote.window_type_label || "Standard windows"}</span>
+                  {quote.estimated_hours && <span style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: "var(--surface-1)", color: "var(--text-secondary)", border: "0.5px solid var(--border)" }}>~{quote.estimated_hours} hrs</span>}
+                  {storeys === "Double storey" && <span style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: "var(--bg-warning)", color: "var(--text-warning)", border: "0.5px solid var(--border-warning)" }}>+$150 danger premium</span>}
+                </div>
               </div>
               <button onClick={saveQuoteAsJob} style={{ fontSize: 12, padding: "6px 12px", background: "var(--surface-1)", color: "var(--text-primary)", border: "0.5px solid var(--border)", marginLeft: 8, flexShrink: 0 }}>
                 {saveMsg || "Save job"}
@@ -157,8 +197,8 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "0.5px solid var(--border)" }}>
               {[
                 { label: "Distance", value: quote.distance_km && quote.drive_time ? `${quote.distance_km} · ${quote.drive_time}` : "—", warn: quote.distance_flag === "long" || quote.distance_flag === "very long" },
-                { label: "Roof size", value: quote.roof_m2 ? `${quote.roof_m2}m²` : "not measured" },
-                { label: "Window type", value: quote.window_type_label || "Standard" },
+                { label: "Roof size", value: quote.roof_m2 ? `${quote.roof_m2}m²` : "estimated" },
+                { label: "Est. time", value: quote.estimated_hours ? `${quote.estimated_hours} hrs` : "—" },
               ].map(s => (
                 <div key={s.label} style={{ minWidth: 80 }}>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 2px" }}>{s.label}</p>
@@ -168,13 +208,11 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
             </div>
 
             {quote.roof_description && (
-              <p style={{ fontSize: 12, color: quote.roof_confidence === "low" ? "var(--text-warning)" : "var(--text-muted)", margin: "8px 0 0", fontStyle: "italic" }}>
-                📐 {quote.roof_description}
-              </p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "8px 0 0", fontStyle: "italic" }}>📐 {quote.roof_description}</p>
             )}
             {quote.travel_surcharge > 0 && (
-              <p style={{ fontSize: 13, color: "var(--text-warning)", margin: "10px 0 0", fontWeight: 500 }}>
-                <i className="ti ti-car" style={{ marginRight: 4 }} />Suggested travel surcharge: +${quote.travel_surcharge} ({quote.distance_flag} drive)
+              <p style={{ fontSize: 13, color: "var(--text-warning)", margin: "8px 0 0", fontWeight: 500 }}>
+                <i className="ti ti-car" style={{ marginRight: 4 }} />Suggested travel surcharge: +${quote.travel_surcharge}
               </p>
             )}
 
@@ -188,8 +226,8 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
           </div>
 
           <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "var(--surface-1)", padding: 4, borderRadius: "var(--radius)", border: "0.5px solid var(--border)" }}>
-            {[["windows","🪟 Windows"],["gutters","🍂 Gutters"],["combo","📦 Combo −10%"]].map(([id, lbl]) => (
-              <button key={id} onClick={() => setActiveTab(id)} style={{ flex: 1, padding: "7px 8px", fontSize: 12, cursor: "pointer", borderRadius: "var(--radius)", background: activeTab === id ? "var(--text-primary)" : "transparent", color: activeTab === id ? "var(--bg)" : "var(--text-muted)", border: "none", fontWeight: activeTab === id ? 500 : 400 }}>{lbl}</button>
+            {[["windows","🪟 Windows"],["outside","☀️ Outside only"],["gutters","🍂 Gutters"],["combo","📦 Combo −10%"]].map(([id, lbl]) => (
+              <button key={id} onClick={() => setActiveTab(id)} style={{ flex: 1, padding: "7px 4px", fontSize: 11, cursor: "pointer", borderRadius: "var(--radius)", background: activeTab === id ? "var(--text-primary)" : "transparent", color: activeTab === id ? "var(--bg)" : "var(--text-muted)", border: "none", fontWeight: activeTab === id ? 500 : 400 }}>{lbl}</button>
             ))}
           </div>
 
@@ -197,26 +235,30 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
             <>
               {quote.learned_time && (
                 <div style={{ padding: "10px 14px", background: "var(--bg-warning)", border: "0.5px solid var(--border-warning)", borderRadius: "var(--radius)", marginBottom: 10 }}>
-                  <p style={{ fontSize: 13, color: "var(--text-warning)", margin: 0, fontWeight: 500 }}>
-                    📊 {quote.learned_time.note} — time adjusted to {quote.learned_time.hours} hrs
-                  </p>
+                  <p style={{ fontSize: 13, color: "var(--text-warning)", margin: 0, fontWeight: 500 }}>📊 {quote.learned_time.note} — adjusted to {quote.learned_time.hours} hrs</p>
                 </div>
               )}
-              <PriceBlock label={quote.window_type_label || "Windows"} opening={quote.windows.opening} fallback={quote.windows.fallback} floor={quote.windows.floor} openingMargin={quote.windows.opening_margin} fallbackMargin={quote.windows.fallback_margin} floorMargin={quote.windows.floor_margin} cost={quote.windows.cost} time={quote.windows.time} includes={quote.windows.includes} highlight={quote.window_type !== "standard"} />
+              <PriceBlock label={quote.window_type_label || "Windows"} opening={quote.windows.opening} fallback={quote.windows.fallback} floor={quote.windows.floor} openingMargin={quote.windows.opening_margin} fallbackMargin={quote.windows.fallback_margin} floorMargin={quote.windows.floor_margin} cost={quote.windows.cost} time={quote.windows.time} includes={quote.windows.includes} highlight={quote.window_type !== "standard"} costBreakdown={quote.cost_breakdown} />
             </>
           )}
+
+          {activeTab === "outside" && quote.outside_only && (
+            <PriceBlock label="Outside only" opening={quote.outside_only.opening} fallback={quote.outside_only.fallback} floor={quote.outside_only.floor} openingMargin={quote.outside_only.opening_margin} fallbackMargin={quote.outside_only.fallback_margin} floorMargin={quote.outside_only.floor_margin} cost={quote.outside_only.cost} time={quote.outside_only.time} includes={quote.outside_only.includes} highlight={false} />
+          )}
+
           {activeTab === "gutters" && quote.gutters && (
             <PriceBlock label="Gutter cleaning" opening={quote.gutters.opening} fallback={quote.gutters.fallback} floor={quote.gutters.floor} openingMargin={quote.gutters.opening_margin} fallbackMargin={quote.gutters.fallback_margin} floorMargin={quote.gutters.floor_margin} cost={quote.gutters.cost} time={quote.gutters.time} includes={quote.gutters.includes} highlight={false} />
           )}
+
           {activeTab === "combo" && quote.combo && (
-            <PriceBlock label="Windows + gutters — 10% off" opening={quote.combo.standard_opening} fallback={quote.combo.standard_fallback} floor={quote.combo.standard_floor} openingMargin={quote.combo.standard_opening_margin} fallbackMargin={quote.combo.standard_fallback_margin} floorMargin={quote.combo.standard_floor_margin} cost={quote.combo.cost} time="combined booking" includes={`10% combo discount — saves customer $${quote.combo.saving}`} highlight={false} />
+            <PriceBlock label="Windows + gutters — 10% off" opening={quote.combo.standard_opening} fallback={quote.combo.standard_fallback} floor={quote.combo.standard_floor} openingMargin={quote.combo.standard_opening_margin} fallbackMargin={quote.combo.standard_fallback_margin} floorMargin={quote.combo.standard_floor_margin} cost={quote.combo.cost} time="combined" includes={`10% combo discount — saves customer $${quote.combo.saving}`} highlight={false} />
           )}
 
           {(quote.observations?.length > 0 || quote.verify?.length > 0) && (
             <div style={{ background: "var(--surface-2)", border: "0.5px solid var(--border)", borderRadius: 12, padding: "1.25rem", marginTop: 12 }}>
               {quote.observations?.length > 0 && (
                 <>
-                  <p style={sectionLabel}>Observations</p>
+                  <p style={sl}>Observations</p>
                   <ul style={{ margin: "0 0 12px", padding: 0, listStyle: "none" }}>
                     {quote.observations.map((o, i) => <li key={i} style={{ fontSize: 14, color: "var(--text-secondary)", padding: "4px 0", borderBottom: "0.5px solid var(--border)", display: "flex", gap: 8 }}><span style={{ color: "var(--text-muted)" }}>—</span>{o}</li>)}
                   </ul>
@@ -224,7 +266,7 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
               )}
               {quote.verify?.length > 0 && (
                 <>
-                  <p style={{ ...sectionLabel, color: "var(--text-warning)" }}>Verify by phone</p>
+                  <p style={{ ...sl, color: "var(--text-warning)" }}>Verify with customer</p>
                   <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                     {quote.verify.map((v, i) => <li key={i} style={{ fontSize: 14, color: "var(--text-secondary)", padding: "4px 0", borderBottom: "0.5px solid var(--border)", display: "flex", gap: 8 }}><span style={{ color: "var(--text-warning)" }}>!</span>{v}</li>)}
                   </ul>
@@ -258,14 +300,13 @@ function HistoryScreen({ jobs, openUpdate, deleteJob }) {
               </div>
               <p style={{ fontSize: 15, fontWeight: 500, margin: "0 0 4px", color: "var(--text-primary)" }}>{job.address}</p>
               <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                {job.bedrooms}BR {job.storeys?.toLowerCase()} {job.propType?.toLowerCase()}
+                {job.bedrooms}BR {job.storeys?.toLowerCase()}
                 {job.quote?.roof_m2 ? ` · ${job.quote.roof_m2}m²` : ""}
                 {job.windowType && job.windowType !== "standard" ? ` · ${job.quote?.window_type_label || job.windowType}` : ""}
                 {job.quotedPrice ? ` · quoted $${job.quotedPrice}` : ""}
                 {job.finalPrice ? ` · charged $${job.finalPrice}` : ""}
                 {job.actualHours ? ` · ${job.actualHours}hrs actual` : ""}
               </p>
-              {job.quoteError && <p style={{ fontSize: 12, color: "var(--text-warning)", margin: "4px 0 0" }}>⚠️ {job.quoteError}</p>}
               {job.jobNotes && <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "6px 0 0", fontStyle: "italic" }}>{job.jobNotes}</p>}
             </div>
             <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
@@ -285,7 +326,8 @@ function UpdateScreen({ selectedJob, setSelectedJob, saveUpdate, setScreen }) {
   const hours = parseFloat(selectedJob.actualHours);
   const price = parseFloat(selectedJob.finalPrice);
   const showProfit = selectedJob.actualHours && selectedJob.finalPrice && !isNaN(hours) && !isNaN(price);
-  const cost = hours * 35 + 80 + 20;
+  const totalHours = hours + 1; // includes drive time
+  const cost = totalHours * 35 + 80 + 20 + (selectedJob.storeys === "Double storey" ? 150 : 0);
   const profit = price - cost;
   const margin = Math.round((profit / price) * 100);
 
@@ -299,7 +341,7 @@ function UpdateScreen({ selectedJob, setSelectedJob, saveUpdate, setScreen }) {
 
       <div style={{ background: "var(--surface-2)", border: "0.5px solid var(--border)", borderRadius: 12, padding: "1.25rem", display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
-          <label style={labelStyle}>Status</label>
+          <label style={ls}>Status</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             {Object.entries(STATUS_LABELS).map(([k, v]) => (
               <button key={k} onClick={() => set("status", k)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: selectedJob.status === k ? STATUS_COLORS[k] : "var(--surface-1)", color: selectedJob.status === k ? "#fff" : "var(--text-secondary)", border: `0.5px solid ${selectedJob.status === k ? STATUS_COLORS[k] : "var(--border)"}`, fontWeight: selectedJob.status === k ? 500 : 400 }}>{v}</button>
@@ -309,41 +351,58 @@ function UpdateScreen({ selectedJob, setSelectedJob, saveUpdate, setScreen }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelStyle}>Quoted price ($)</label>
+            <label style={ls}>Quoted price ($)</label>
             <input type="number" value={selectedJob.quotedPrice || ""} onChange={e => set("quotedPrice", e.target.value)} placeholder="390" style={{ marginTop: 6 }} />
           </div>
           <div>
-            <label style={labelStyle}>Final price charged ($)</label>
+            <label style={ls}>Final price charged ($)</label>
             <input type="number" value={selectedJob.finalPrice || ""} onChange={e => set("finalPrice", e.target.value)} placeholder="365" style={{ marginTop: 6 }} />
           </div>
           <div>
-            <label style={labelStyle}>Estimated hours</label>
+            <label style={ls}>Estimated hours</label>
             <input type="text" value={selectedJob.estimatedHours || ""} onChange={e => set("estimatedHours", e.target.value)} placeholder="3.5–4" style={{ marginTop: 6 }} />
           </div>
           <div>
-            <label style={labelStyle}>Actual hours taken</label>
-            <input type="number" step="0.5" value={selectedJob.actualHours || ""} onChange={e => set("actualHours", e.target.value)} placeholder="3.5" style={{ marginTop: 6 }} />
+            <label style={ls}>Actual hours taken</label>
+            <input type="number" step="0.25" value={selectedJob.actualHours || ""} onChange={e => set("actualHours", e.target.value)} placeholder="3.5" style={{ marginTop: 6 }} />
+          </div>
+          <div>
+            <label style={ls}>Roof size (m²)</label>
+            <input type="number" value={selectedJob.actualRoofM2 || selectedJob.quote?.roof_m2 || ""} onChange={e => set("actualRoofM2", e.target.value)} placeholder="165" style={{ marginTop: 6 }} />
+          </div>
+          <div>
+            <label style={ls}>Billable hourly rate</label>
+            <p style={{ fontSize: 18, fontWeight: 500, color: "var(--text-primary)", margin: "10px 0 0" }}>
+              {selectedJob.finalPrice && selectedJob.actualHours
+                ? `$${Math.round(parseFloat(selectedJob.finalPrice) / parseFloat(selectedJob.actualHours))}/hr`
+                : "—"}
+            </p>
           </div>
         </div>
 
         <div>
-          <label style={labelStyle}>Customer name</label>
+          <label style={ls}>Customer name</label>
           <input type="text" value={selectedJob.customerName || ""} onChange={e => set("customerName", e.target.value)} placeholder="Sarah Johnson" style={{ marginTop: 6 }} />
         </div>
         <div>
-          <label style={labelStyle}>Customer phone</label>
+          <label style={ls}>Customer phone</label>
           <input type="tel" value={selectedJob.customerPhone || ""} onChange={e => set("customerPhone", e.target.value)} placeholder="0412 345 678" style={{ marginTop: 6 }} />
         </div>
         <div>
-          <label style={labelStyle}>Job notes</label>
-          <textarea value={selectedJob.jobNotes || ""} onChange={e => set("jobNotes", e.target.value)} placeholder="e.g. Had colonial windows at front, took longer than expected. Customer wants quarterly service." rows={3} style={{ marginTop: 6, resize: "vertical" }} />
+          <label style={ls}>Job notes</label>
+          <textarea value={selectedJob.jobNotes || ""} onChange={e => set("jobNotes", e.target.value)} placeholder="e.g. Colonial windows at front, took longer than expected, customer wants quarterly..." rows={3} style={{ marginTop: 6, resize: "vertical" }} />
         </div>
 
         {showProfit && (
           <div style={{ padding: "12px 14px", background: "var(--surface-1)", borderRadius: "var(--radius)", border: "0.5px solid var(--border)" }}>
-            <p style={{ ...sectionLabel, margin: "0 0 8px" }}>Profit snapshot</p>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 4px" }}>Cost: ${cost.toFixed(0)} (${(hours * 35).toFixed(0)} labour + $80 CAC + $20 fuel)</p>
-            <p style={{ fontSize: 14, color: margin >= 20 ? "#2a9d56" : "var(--text-warning)", fontWeight: 500, margin: 0 }}>Profit: ${profit.toFixed(0)} ({margin}% margin)</p>
+            <p style={{ ...sl, margin: "0 0 8px" }}>Profit snapshot</p>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Labour (incl. 1hr drive): ${Math.round(totalHours * 35)}</p>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>CAC + fuel: $100</p>
+            {selectedJob.storeys === "Double storey" && <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Double storey premium: $150</p>}
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 2px" }}>Total cost: ${cost.toFixed(0)}</p>
+            <p style={{ fontSize: 15, color: margin >= 20 ? "#2a9d56" : "var(--text-warning)", fontWeight: 500, margin: "6px 0 0", borderTop: "0.5px solid var(--border)", paddingTop: 6 }}>
+              Profit: ${profit.toFixed(0)} ({margin}% margin) · ${Math.round(price / hours)}/hr billable
+            </p>
           </div>
         )}
 
@@ -352,8 +411,6 @@ function UpdateScreen({ selectedJob, setSelectedJob, saveUpdate, setScreen }) {
     </div>
   );
 }
-
-// ── Main App ──
 
 export default function App() {
   const [screen, setScreen] = useState("quote");
@@ -364,8 +421,9 @@ export default function App() {
   const [storeys, setStoreys] = useState("Single storey");
   const [propType, setPropType] = useState("House");
   const [extraNotes, setExtraNotes] = useState("");
-  const [roofM2, setRoofM2] = useState("");
   const [windowType, setWindowType] = useState("standard");
+  const [roofM2, setRoofM2] = useState("");
+  const [features, setFeatures] = useState({});
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [error, setError] = useState(null);
@@ -391,7 +449,7 @@ export default function App() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null }),
+        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null, features }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -410,9 +468,9 @@ export default function App() {
     const job = {
       id: Date.now().toString(),
       status: "quoted",
-      address, bedrooms, storeys, propType, extraNotes, windowType, quote,
-      quotedPrice: quote.windows?.standard?.opening,
-      estimatedHours: quote.windows?.standard?.time,
+      address, bedrooms, storeys, propType, extraNotes, windowType, features, quote,
+      quotedPrice: quote.windows?.opening,
+      estimatedHours: quote.estimated_hours,
       suburb: address.split(",").slice(-2, -1)[0]?.trim() || "",
       createdAt: new Date().toISOString(),
     };
@@ -457,6 +515,7 @@ export default function App() {
           extraNotes={extraNotes} setExtraNotes={setExtraNotes}
           windowType={windowType} setWindowType={setWindowType}
           roofM2={roofM2} setRoofM2={setRoofM2}
+          features={features} setFeatures={setFeatures}
           loading={loading} generateQuote={generateQuote}
           saveQuoteAsJob={saveQuoteAsJob} saveMsg={saveMsg}
           quote={quote} activeTab={activeTab} setActiveTab={setActiveTab}
