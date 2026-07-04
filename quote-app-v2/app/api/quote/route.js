@@ -62,14 +62,7 @@ const WINDOW_TYPE_LABELS = {
 
 // ─── FEATURE SURCHARGES ──────────────────────────────────────────────────────
 
-const FEATURE_SURCHARGES = {
-  large_sliding_doors: 30,
-  large_living_glass:  30,
-  pool_windows:        25,
-  pool_fencing:        30,
-  difficult_access:    30,
-  high_window_count:   30,
-};
+// Feature surcharges simplified — pool fencing handled per-pane at $10
 
 // ─── BASE HOURS BY PROPERTY ──────────────────────────────────────────────────
 // Based on real job data — calibrated from actual completed jobs
@@ -252,12 +245,12 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
   const includesLabel = [
     roofLabel,
     WINDOW_TYPE_LABELS[windowType] || "Standard",
-    roofType === "metal" ? "metal roof +45min" : null,
-    pitch && pitch !== "standard" ? `${PITCH_LABELS[pitch]}${pitchSurcharge ? ` +$${pitchSurcharge}` : ""}` : null,
+    needsRoof && roofType === "metal" ? "metal roof +45min" : null,
+    needsRoof && pitch && pitch !== "standard" && pitch !== "flat" ? `${PITCH_LABELS[pitch]} +$${pitchSurcharge}` : null,
     isDouble ? "+$150 double storey premium" : null,
     roofAdj !== 0 ? `roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : null,
     colSurcharge ? `colonial +$${colSurcharge}` : null,
-    featSurcharge ? `features +$${featSurcharge}` : null,
+    poolFencingSurcharge > 0 ? `pool fencing ${poolPanes} panes +$${poolFencingSurcharge}` : null,
     travelCost > 0 ? `travel $${travelCost.toFixed(0)}` : null,
   ].filter(Boolean).join(" · ");
 
@@ -300,9 +293,10 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
       cac: CAC,
       travel_km_charge: Math.round(distanceKm * RATE_PER_KM),
       travel_time_fee: driveTimeMins > 45 ? 35 : driveTimeMins > 20 ? 12 : 0,
-      travel_total: travelCost,
+      travel_total: Math.round(travelCost),
       danger_premium: isDouble ? DS_PREMIUM : 0,
       pitch_surcharge: pitchSurcharge,
+      pool_fencing: poolFencingSurcharge,
       metal_extra_time: metalExtra > 0 ? "45 min" : null,
       total_cost: win.cost,
     }
@@ -348,7 +342,7 @@ Rules:
 
 export async function POST(request) {
   try {
-    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2, features, roofType, pitch } = await request.json();
+    const { address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: manualRoofM2, roofType, pitch, onRoof, poolPanes } = await request.json();
 
     if (!address?.trim()) return NextResponse.json({ error: "Address is required" }, { status: 400 });
 
@@ -409,7 +403,7 @@ export async function POST(request) {
       };
     }
 
-    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, features || {}, roofType || "tile", pitch || "standard", jobs);
+    const pricing = buildQuote(facts, bedrooms, storeys, propType, windowType || "standard", roofM2, {}, roofType || "tile", pitch || "standard", onRoof === true, poolPanes || 0, jobs);
 
     return NextResponse.json({
       ...facts,
