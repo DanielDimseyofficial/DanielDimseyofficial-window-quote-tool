@@ -90,7 +90,7 @@ function colonialCfg(s) {
   }[s] || { bg: "var(--surface-1)", color: "var(--text-muted)", label: "—" });
 }
 
-function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, features, setFeatures, roofType, setRoofType, pitch, setPitch, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
+function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setStoreys, propType, setPropType, extraNotes, setExtraNotes, windowType, setWindowType, roofM2, setRoofM2, onRoof, setOnRoof, roofType, setRoofType, pitch, setPitch, poolPanes, setPoolPanes, loading, generateQuote, saveQuoteAsJob, saveMsg, quote, activeTab, setActiveTab, error, resultRef }) {
   return (
     <div style={{ padding: "0 0 80px" }}>
       <div style={{ marginBottom: 20 }}>
@@ -140,36 +140,41 @@ function QuoteScreen({ address, setAddress, bedrooms, setBedrooms, storeys, setS
         </div>
 
         <div>
-          <label style={ls}>Roof type</label>
+          <label style={ls}>Do you need to get on the roof?</label>
           <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            {[["tile","🔴 Tile"],["metal","⬛ Metal"]].map(([val, lbl]) => (
-              <button key={val} onClick={() => setRoofType(val)} style={{ padding: "6px 18px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: roofType === val ? "var(--text-primary)" : "var(--surface-1)", color: roofType === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${roofType === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: roofType === val ? 500 : 400 }}>{lbl}</button>
+            {[["no","No"],["yes","Yes"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setOnRoof(val === "yes")} style={{ padding: "6px 18px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: (val === "yes") === onRoof ? "var(--text-primary)" : "var(--surface-1)", color: (val === "yes") === onRoof ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${(val === "yes") === onRoof ? "var(--text-primary)" : "var(--border)"}`, fontWeight: (val === "yes") === onRoof ? 500 : 400 }}>{lbl}</button>
             ))}
-            {roofType === "metal" && <span style={{ fontSize: 12, color: "var(--text-warning)", alignSelf: "center" }}>+45 min added</span>}
           </div>
         </div>
 
-        <div>
-          <label style={ls}>Roof pitch</label>
-          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-            {[["flat","Flat/low"],["standard","Standard"],["steep","Steep +$65"],["very_steep","Very steep +$100"]].map(([val, lbl]) => (
-              <button key={val} onClick={() => setPitch(val)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: pitch === val ? "var(--text-primary)" : "var(--surface-1)", color: pitch === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${pitch === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: pitch === val ? 500 : 400 }}>{lbl}</button>
-            ))}
-          </div>
-          {pitch === "flat" && roofType === "metal" && <p style={{ fontSize: 12, color: "#2a9d56", margin: "4px 0 0" }}>Flat metal roof — no pitch surcharge applies</p>}
-        </div>
+        {onRoof && (
+          <>
+            <div>
+              <label style={ls}>Roof type</label>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                {[["tile","🔴 Tile"],["metal","⬛ Metal"]].map(([val, lbl]) => (
+                  <button key={val} onClick={() => setRoofType(val)} style={{ padding: "6px 18px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: roofType === val ? "var(--text-primary)" : "var(--surface-1)", color: roofType === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${roofType === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: roofType === val ? 500 : 400 }}>{lbl}</button>
+                ))}
+                {roofType === "metal" && <span style={{ fontSize: 12, color: "var(--text-warning)", alignSelf: "center" }}>+45 min</span>}
+              </div>
+            </div>
+            <div>
+              <label style={ls}>Roof pitch</label>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {[["flat","Flat — no charge"],["standard","Standard"],["steep","Steep +$65"],["very_steep","Very steep +$100"]].map(([val, lbl]) => (
+                  <button key={val} onClick={() => setPitch(val)} style={{ padding: "6px 14px", fontSize: 13, borderRadius: 20, cursor: "pointer", background: pitch === val ? "var(--text-primary)" : "var(--surface-1)", color: pitch === val ? "var(--bg)" : "var(--text-secondary)", border: `0.5px solid ${pitch === val ? "var(--text-primary)" : "var(--border)"}`, fontWeight: pitch === val ? 500 : 400 }}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         <div>
-          <label style={ls}>Property features <span style={{ fontWeight: 400, textTransform: "none" }}>(tick all that apply)</span></label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            {FEATURES.map(([key, label]) => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 14, color: "var(--text-secondary)" }}>
-                <input type="checkbox" checked={!!features[key]} onChange={e => setFeatures(f => ({ ...f, [key]: e.target.checked }))}
-                  style={{ width: 16, height: 16, cursor: "pointer" }} />
-                {label}
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>+${key === "pool_fencing" ? "30" : key === "pool_windows" ? "25" : "30"}</span>
-              </label>
-            ))}
+          <label style={ls}>Glass pool fencing <span style={{ fontWeight: 400, textTransform: "none" }}>($10 per pane)</span></label>
+          <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
+            <input type="number" value={poolPanes} onChange={e => setPoolPanes(e.target.value)} placeholder="Number of glass panes (0 if none)" style={{ flex: 1 }} />
+            {poolPanes > 0 && <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", flexShrink: 0 }}>+${parseInt(poolPanes) * 10}</span>}
           </div>
         </div>
 
@@ -445,9 +450,10 @@ export default function App() {
   const [extraNotes, setExtraNotes] = useState("");
   const [windowType, setWindowType] = useState("standard");
   const [roofM2, setRoofM2] = useState("");
-  const [features, setFeatures] = useState({});
+  const [onRoof, setOnRoof] = useState(false);
   const [roofType, setRoofType] = useState("tile");
   const [pitch, setPitch] = useState("standard");
+  const [poolPanes, setPoolPanes] = useState("");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [error, setError] = useState(null);
@@ -473,7 +479,7 @@ export default function App() {
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null, features, roofType, pitch }),
+        body: JSON.stringify({ address, bedrooms, storeys, propType, extraNotes, windowType, roofM2: roofM2 ? parseInt(roofM2) : null, roofType, pitch, onRoof, poolPanes: poolPanes ? parseInt(poolPanes) : 0 }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -492,7 +498,7 @@ export default function App() {
     const job = {
       id: Date.now().toString(),
       status: "quoted",
-      address, bedrooms, storeys, propType, extraNotes, windowType, features, roofType, pitch, quote,
+      address, bedrooms, storeys, propType, extraNotes, windowType, roofType, pitch, onRoof, poolPanes, quote,
       quotedPrice: quote.windows?.opening,
       estimatedHours: quote.estimated_hours,
       suburb: address.split(",").slice(-2, -1)[0]?.trim() || "",
@@ -539,9 +545,10 @@ export default function App() {
           extraNotes={extraNotes} setExtraNotes={setExtraNotes}
           windowType={windowType} setWindowType={setWindowType}
           roofM2={roofM2} setRoofM2={setRoofM2}
-          features={features} setFeatures={setFeatures}
+          onRoof={onRoof} setOnRoof={setOnRoof}
           roofType={roofType} setRoofType={setRoofType}
           pitch={pitch} setPitch={setPitch}
+          poolPanes={poolPanes} setPoolPanes={setPoolPanes}
           loading={loading} generateQuote={generateQuote}
           saveQuoteAsJob={saveQuoteAsJob} saveMsg={saveMsg}
           quote={quote} activeTab={activeTab} setActiveTab={setActiveTab}
