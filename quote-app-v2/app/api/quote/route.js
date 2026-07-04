@@ -191,24 +191,32 @@ function fmtTime(hours) {
 
 // ─── BUILD QUOTE ─────────────────────────────────────────────────────────────
 
-function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, features, roofType, pitch, jobs) {
+function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, features, roofType, pitch, onRoof, poolPanes, jobs) {
   const isDouble = storeys === "Double storey";
   const isTownhouse = propType === "Townhouse";
   const minCharge = isDouble ? DS_MIN_CHARGE : MIN_CHARGE;
 
+  // Roof type and pitch only apply if cleaner needs to get on the roof
+  const needsRoof = onRoof === true;
+  const metalExtra = (needsRoof && roofType === "metal") ? 0.75 : 0;
+  const pitchSurcharge = needsRoof ? (PITCH_SURCHARGES[pitch || "standard"] || 0) : 0;
+
+  // Travel cost
+  const distanceKm = parseFloat(facts.distance_km) || 0;
+  const driveTimeMins = facts.drive_time_mins || 0;
+  const travelCost = getTravelFee(distanceKm, driveTimeMins);
+
   // Time estimate
   const baseHoursRaw = getBaseHours(bedrooms, storeys, propType, roofM2);
-  const baseHours = Math.round((baseHoursRaw + metalExtra) * 4) / 4;
+  const baseHours = Math.max(MIN_HOURS, Math.round((baseHoursRaw + metalExtra) * 4) / 4);
   const learned = getLearnedHours(jobs, bedrooms, storeys, roofM2, windowType);
   const hours = learned ? learned.hours : baseHours;
 
   // Surcharges
   const roofAdj = getRoofAdjustment(roofM2, storeys);
   const colSurcharge = WINDOW_SURCHARGES[windowType] || 0;
-  const featSurcharge = Object.entries(features || {})
-    .filter(([, v]) => v)
-    .reduce((sum, [k]) => sum + (FEATURE_SURCHARGES[k] || 0), 0);
-  const totalExtra = roofAdj + colSurcharge + featSurcharge;
+  const poolFencingSurcharge = Math.round((parseInt(poolPanes) || 0) * 10);
+  const totalExtra = roofAdj + colSurcharge + pitchSurcharge + poolFencingSurcharge;
 
   // Windows full price
   const win = calcPrices(hours, isDouble, totalExtra, minCharge, travelCost);
@@ -251,7 +259,7 @@ function buildQuote(facts, bedrooms, storeys, propType, windowType, roofM2, feat
     roofAdj !== 0 ? `roof adj ${roofAdj > 0 ? "+" : ""}$${roofAdj}` : null,
     colSurcharge ? `colonial +$${colSurcharge}` : null,
     poolFencingSurcharge > 0 ? `pool fencing ${poolPanes} panes +$${poolFencingSurcharge}` : null,
-    travelCost > 0 ? `travel $${travelCost.toFixed(0)}` : null,
+    travelCost > 0 ? `travel $${Math.round(travelCost)}` : null,
   ].filter(Boolean).join(" · ");
 
   return {
